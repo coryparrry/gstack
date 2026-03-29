@@ -1618,7 +1618,7 @@ High-confidence findings (agreed on by multiple sources) should be prioritized f
 
 ---
 
-## Step 5: CHANGELOG (auto-generate)
+## CHANGELOG (auto-generate)
 
 1. Read `CHANGELOG.md` header to know the format.
 
@@ -1651,6 +1651,7 @@ High-confidence findings (agreed on by multiple sources) should be prioritized f
    - Write concise, descriptive bullet points
    - Insert after the file header (line 5), dated today
    - Format: `## [X.Y.Z.W] - YYYY-MM-DD`
+   - **Voice:** Lead with what the user can now **do** that they couldn't before. Use plain language, not implementation details. Never mention TODOS.md, internal tracking, or contributor-facing details.
 
 6. **Cross-check:** Compare your CHANGELOG entry against the commit list from step 2.
    Every commit must map to at least one bullet point. If any commit is unrepresented,
