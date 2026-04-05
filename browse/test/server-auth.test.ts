@@ -28,14 +28,19 @@ describe('Server auth security', () => {
     // Token must not appear in the health response construction
     expect(healthBlock).not.toContain('token: AUTH_TOKEN');
     expect(healthBlock).not.toContain('token: AUTH');
-    // Should have a comment explaining why
-    expect(healthBlock).toContain('NOT served here');
+    // Should not expose browsing activity when tunneled
+    expect(healthBlock).toContain('not through tunnel');
   });
 
-  // Test 1b: /health must not use chrome-extension Origin gating (spoofable)
-  test('/health does not use spoofable Origin header for token gating', () => {
+  // Test 1b: /health strips sensitive fields when tunneled
+  test('/health strips currentUrl, agent, session when tunnel is active', () => {
     const healthBlock = sliceBetween(SERVER_SRC, "url.pathname === '/health'", "url.pathname === '/connect'");
-    expect(healthBlock).not.toContain("chrome-extension://') ? { token");
+    // currentUrl and agent.currentMessage must be gated on !tunnelActive
+    expect(healthBlock).toContain('!tunnelActive');
+    expect(healthBlock).toContain('currentUrl');
+    expect(healthBlock).toContain('currentMessage');
+    // Tunnel URL must NOT be exposed in health response
+    expect(healthBlock).not.toContain('url: tunnelUrl');
   });
 
   // Test 1c: newtab must check domain restrictions (CSO finding #5)
@@ -139,7 +144,34 @@ describe('Server auth security', () => {
     expect(handleBlock).toContain('Tab not owned by your agent');
   });
 
-  // Test 10b: activity attribution includes clientId
+  // Test 10b: chain command pre-validates subcommand scopes
+  test('chain handler checks scope for each subcommand before dispatch', () => {
+    const metaSrc = fs.readFileSync(path.join(import.meta.dir, '../src/meta-commands.ts'), 'utf-8');
+    const chainBlock = metaSrc.slice(
+      metaSrc.indexOf("case 'chain':"),
+      metaSrc.indexOf("case 'diff':")
+    );
+    expect(chainBlock).toContain('checkScope');
+    expect(chainBlock).toContain('Chain rejected');
+    expect(chainBlock).toContain('tokenInfo');
+  });
+
+  // Test 10c: handleMetaCommand accepts tokenInfo parameter
+  test('handleMetaCommand accepts tokenInfo for chain scope checking', () => {
+    const metaSrc = fs.readFileSync(path.join(import.meta.dir, '../src/meta-commands.ts'), 'utf-8');
+    const sig = metaSrc.slice(
+      metaSrc.indexOf('export async function handleMetaCommand'),
+      metaSrc.indexOf('): Promise<string>')
+    );
+    expect(sig).toContain('tokenInfo');
+  });
+
+  // Test 10d: server passes tokenInfo to handleMetaCommand
+  test('server passes tokenInfo to handleMetaCommand', () => {
+    expect(SERVER_SRC).toContain('handleMetaCommand(command, args, browserManager, shutdown, tokenInfo)');
+  });
+
+  // Test 10e: activity attribution includes clientId
   test('activity events include clientId from token', () => {
     const commandStartBlock = sliceBetween(SERVER_SRC, "Activity: emit command_start", "try {");
     expect(commandStartBlock).toContain('clientId: tokenInfo?.clientId');

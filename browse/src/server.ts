@@ -947,7 +947,7 @@ async function handleCommand(body: any, tokenInfo?: TokenInfo | null): Promise<R
     } else if (WRITE_COMMANDS.has(command)) {
       result = await handleWriteCommand(command, args, browserManager);
     } else if (META_COMMANDS.has(command)) {
-      result = await handleMetaCommand(command, args, browserManager, shutdown);
+      result = await handleMetaCommand(command, args, browserManager, shutdown, tokenInfo);
       // Start periodic snapshot interval when watch mode begins
       if (command === 'watch' && args[0] !== 'stop' && browserManager.isWatching()) {
         const watchInterval = setInterval(async () => {
@@ -1203,6 +1203,8 @@ async function start() {
       }
 
       // Health check — no auth required, does NOT reset idle timer
+      // When tunneled, /health is reachable from the internet. Only expose
+      // operational metadata, never browsing activity or user messages.
       if (url.pathname === '/health') {
         const healthy = await browserManager.isHealthy();
         const healthResponse: Record<string, any> = {
@@ -1210,22 +1212,22 @@ async function start() {
           mode: browserManager.getConnectionMode(),
           uptime: Math.floor((Date.now() - startTime) / 1000),
           tabs: browserManager.getTabCount(),
-          currentUrl: browserManager.getCurrentUrl(),
-          // Auth token NOT served here. Extension reads from ~/.gstack/.auth.json
-          // (written by launchHeaded at browser-manager.ts:243). Serving the token
-          // on an unauthenticated endpoint is unsafe because Origin headers are
-          // trivially spoofable, and ngrok exposes /health to the internet.
-          chatEnabled: true,
-          agent: {
+        };
+        // Sensitive fields only served on localhost (not through tunnel).
+        // currentUrl reveals internal URLs, currentMessage reveals user intent.
+        if (!tunnelActive) {
+          healthResponse.currentUrl = browserManager.getCurrentUrl();
+          healthResponse.chatEnabled = true;
+          healthResponse.agent = {
             status: agentStatus,
             runningFor: agentStartTime ? Date.now() - agentStartTime : null,
             currentMessage,
             queueLength: messageQueue.length,
-          },
-          session: sidebarSession ? { id: sidebarSession.id, name: sidebarSession.name } : null,
-        };
-        if (tunnelActive) {
-          healthResponse.tunnel = { url: tunnelUrl, active: true };
+          };
+          healthResponse.session = sidebarSession ? { id: sidebarSession.id, name: sidebarSession.name } : null;
+        } else {
+          healthResponse.tunnel = { active: true };
+          healthResponse.chatEnabled = true;
         }
         return new Response(JSON.stringify(healthResponse), {
           status: 200,
