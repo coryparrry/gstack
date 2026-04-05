@@ -1093,10 +1093,11 @@ async function start() {
           uptime: Math.floor((Date.now() - startTime) / 1000),
           tabs: browserManager.getTabCount(),
           currentUrl: browserManager.getCurrentUrl(),
-          // Auth token for extension bootstrap. Safe: /health is localhost-only.
-          // Previously served via .auth.json in extension dir, but that breaks
-          // read-only .app bundles and codesigning. Extension reads token from here.
-          token: AUTH_TOKEN,
+          // Auth token for extension bootstrap. Only returned when the request
+          // comes from a Chrome extension (Origin: chrome-extension://...).
+          // Previously served unconditionally, but that leaks the token if the
+          // server is tunneled to the internet (ngrok, SSH tunnel).
+          ...(req.headers.get('origin')?.startsWith('chrome-extension://') ? { token: AUTH_TOKEN } : {}),
           chatEnabled: true,
           agent: {
             status: agentStatus,
