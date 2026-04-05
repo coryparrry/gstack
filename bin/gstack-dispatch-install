@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# gstack-dispatch-install — install the dispatch daemon as a persistent service
+# Usage: gstack-dispatch-install [--uninstall]
+#
+# macOS: creates a launchd plist in ~/Library/LaunchAgents/
+# Linux: creates a systemd user service
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DAEMON_BIN="$SCRIPT_DIR/gstack-dispatch-daemon"
+SERVICE_NAME="com.gstack.dispatch-daemon"
+
+if [ ! -f "$DAEMON_BIN" ]; then
+  echo "Error: daemon binary not found at $DAEMON_BIN" >&2
+  exit 1
+fi
+
+uninstall() {
+  if [[ "$OSTYPE" == darwin* ]]; then
+    PLIST="$HOME/Library/LaunchAgents/${SERVICE_NAME}.plist"
+    launchctl unload "$PLIST" 2>/dev/null || true
+    rm -f "$PLIST"
+    echo "Uninstalled launchd service: $PLIST"
+  elif command -v systemctl >/dev/null 2>&1; then
+    systemctl --user stop "$SERVICE_NAME" 2>/dev/null || true
+    systemctl --user disable "$SERVICE_NAME" 2>/dev/null || true
+    rm -f "$HOME/.config/systemd/user/${SERVICE_NAME}.service"
+    systemctl --user daemon-reload
+    echo "Uninstalled systemd service: $SERVICE_NAME"
+  else
+    echo "No supported service manager found"
+    exit 1
+  fi
+}
+
+install_macos() {
+  PLIST_DIR="$HOME/Library/LaunchAgents"
+  mkdir -p "$PLIST_DIR"
+  PLIST="$PLIST_DIR/${SERVICE_NAME}.plist"
+
+  cat > "$PLIST" << PLIST_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${SERVICE_NAME}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${DAEMON_BIN}</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${HOME}/.gstack/dispatch/daemon-stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>${HOME}/.gstack/dispatch/daemon-stderr.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:${HOME}/.bun/bin</string>
+  </dict>
+</dict>
+</plist>
+PLIST_EOF
+
+  launchctl unload "$PLIST" 2>/dev/null || true
+  launchctl load "$PLIST"
+  echo "Installed and started launchd service: $PLIST"
+  echo "Logs: ~/.gstack/dispatch/daemon-stdout.log"
+}
+
+install_linux() {
+  SERVICE_DIR="$HOME/.config/systemd/user"
+  mkdir -p "$SERVICE_DIR"
+  SERVICE_FILE="$SERVICE_DIR/${SERVICE_NAME}.service"
+
+  cat > "$SERVICE_FILE" << SERVICE_EOF
+[Unit]
+Description=gstack dispatch daemon
+After=network.target
+
+[Service]
+ExecStart=${DAEMON_BIN}
+Restart=always
+RestartSec=10
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:%h/.bun/bin
+StandardOutput=append:%h/.gstack/dispatch/daemon-stdout.log
+StandardError=append:%h/.gstack/dispatch/daemon-stderr.log
+
+[Install]
+WantedBy=default.target
+SERVICE_EOF
+
+  systemctl --user daemon-reload
+  systemctl --user enable "$SERVICE_NAME"
+  systemctl --user start "$SERVICE_NAME"
+  echo "Installed and started systemd service: $SERVICE_FILE"
+  echo "Status: systemctl --user status $SERVICE_NAME"
+  echo "Logs: ~/.gstack/dispatch/daemon-stdout.log"
+}
+
+# Parse args
+if [ "${1:-}" = "--uninstall" ]; then
+  uninstall
+  exit 0
+fi
+
+mkdir -p "$HOME/.gstack/dispatch"
+
+if [[ "$OSTYPE" == darwin* ]]; then
+  install_macos
+elif command -v systemctl >/dev/null 2>&1; then
+  install_linux
+else
+  echo "No supported service manager found (need launchd or systemd)"
+  echo "Run manually: $DAEMON_BIN &"
+  exit 1
+fi
