@@ -630,15 +630,17 @@ export class BrowserManager {
 
   /**
    * Check if a client can access a tab.
-   * Read access is always allowed. Write access requires ownership.
-   * Unowned tabs are root-only for writes.
+   * If ownOnly or isWrite is true, requires ownership.
+   * Otherwise (reads), allow by default.
    */
-  checkTabAccess(tabId: number, clientId: string, isWrite: boolean): boolean {
+  checkTabAccess(tabId: number, clientId: string, options: { isWrite?: boolean; ownOnly?: boolean } = {}): boolean {
     if (clientId === 'root') return true;
-    if (!isWrite) return true;
     const owner = this.tabOwnership.get(tabId);
-    if (!owner) return false; // unowned = root-only for writes
-    return owner === clientId;
+    if (options.ownOnly || options.isWrite) {
+      if (!owner) return false;
+      return owner === clientId;
+    }
+    return true;
   }
 
   /** Transfer tab ownership to a different client. */

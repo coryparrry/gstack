@@ -28,19 +28,19 @@ describe('Tab Isolation', () => {
 
   describe('checkTabAccess', () => {
     it('root can always access any tab (read)', () => {
-      expect(bm.checkTabAccess(1, 'root', false)).toBe(true);
+      expect(bm.checkTabAccess(1, 'root', { isWrite: false })).toBe(true);
     });
 
     it('root can always access any tab (write)', () => {
-      expect(bm.checkTabAccess(1, 'root', true)).toBe(true);
+      expect(bm.checkTabAccess(1, 'root', { isWrite: true })).toBe(true);
     });
 
     it('any agent can read an unowned tab', () => {
-      expect(bm.checkTabAccess(1, 'agent-1', false)).toBe(true);
+      expect(bm.checkTabAccess(1, 'agent-1', { isWrite: false })).toBe(true);
     });
 
     it('scoped agent cannot write to unowned tab', () => {
-      expect(bm.checkTabAccess(1, 'agent-1', true)).toBe(false);
+      expect(bm.checkTabAccess(1, 'agent-1', { isWrite: true })).toBe(false);
     });
 
     it('scoped agent can read another agent tab', () => {
@@ -49,12 +49,12 @@ describe('Tab Isolation', () => {
       // with a known owner via the internal state
       // We'll use transferTab which only checks pages map... let's test checkTabAccess directly
       // checkTabAccess reads from tabOwnership map, which is empty here
-      expect(bm.checkTabAccess(1, 'agent-2', false)).toBe(true);
+      expect(bm.checkTabAccess(1, 'agent-2', { isWrite: false })).toBe(true);
     });
 
     it('scoped agent cannot write to another agent tab', () => {
       // With no ownership set, this is an unowned tab -> denied
-      expect(bm.checkTabAccess(1, 'agent-2', true)).toBe(false);
+      expect(bm.checkTabAccess(1, 'agent-2', { isWrite: true })).toBe(false);
     });
   });
 
