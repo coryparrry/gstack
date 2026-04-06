@@ -21,26 +21,35 @@ function sliceBetween(source: string, startMarker: string, endMarker: string): s
 }
 
 describe('Server auth security', () => {
-  // Test 1: /health must NOT serve the auth token (CSO finding #1 — spoofable Origin)
-  // Extension reads token from ~/.gstack/.auth.json instead.
-  test('/health does NOT serve auth token', () => {
+  // Test 1: /health serves token on localhost ONLY (not when tunneled)
+  // Extension needs the token to authenticate, but it must never leak through a tunnel.
+  test('/health serves token on localhost only, never when tunneled', () => {
     const healthBlock = sliceBetween(SERVER_SRC, "url.pathname === '/health'", "url.pathname === '/connect'");
-    // Token must not appear in the health response construction
-    expect(healthBlock).not.toContain('token: AUTH_TOKEN');
-    expect(healthBlock).not.toContain('token: AUTH');
+    // Token MUST be present in the localhost (!tunnelActive) branch
+    expect(healthBlock).toContain('healthResponse.token = AUTH_TOKEN');
+    // Token assignment must be inside the !tunnelActive guard
+    const tokenIdx = healthBlock.indexOf('healthResponse.token = AUTH_TOKEN');
+    const guardIdx = healthBlock.indexOf('if (!tunnelActive)');
+    const elseIdx = healthBlock.indexOf('} else {', guardIdx);
+    expect(tokenIdx).toBeGreaterThan(guardIdx);
+    expect(tokenIdx).toBeLessThan(elseIdx);
     // Should not expose browsing activity when tunneled
     expect(healthBlock).toContain('not through tunnel');
   });
 
   // Test 1b: /health strips sensitive fields when tunneled
-  test('/health strips currentUrl, agent, session when tunnel is active', () => {
+  test('/health strips token, currentUrl, agent, session when tunnel is active', () => {
     const healthBlock = sliceBetween(SERVER_SRC, "url.pathname === '/health'", "url.pathname === '/connect'");
     // currentUrl and agent.currentMessage must be gated on !tunnelActive
     expect(healthBlock).toContain('!tunnelActive');
     expect(healthBlock).toContain('currentUrl');
     expect(healthBlock).toContain('currentMessage');
+    // Token must NOT appear in the tunnel branch (the else block)
+    const elseIdx = healthBlock.indexOf('} else {');
+    const tunnelBranch = healthBlock.slice(elseIdx);
+    expect(tunnelBranch).not.toContain('AUTH_TOKEN');
     // Tunnel URL must NOT be exposed in health response
-    expect(healthBlock).not.toContain('url: tunnelUrl');
+    expect(tunnelBranch).not.toContain('url: tunnelUrl');
   });
 
   // Test 1c: newtab must check domain restrictions (CSO finding #5)
