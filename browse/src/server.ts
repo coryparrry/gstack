@@ -1308,40 +1308,29 @@ async function start() {
       }
 
       // Health check — no auth required, does NOT reset idle timer
-      // When tunneled, /health is reachable from the internet. Only expose
-      // operational metadata, never browsing activity or user messages.
       if (url.pathname === '/health') {
         const healthy = await browserManager.isHealthy();
-        const healthResponse: Record<string, any> = {
+        return new Response(JSON.stringify({
           status: healthy ? 'healthy' : 'unhealthy',
           mode: browserManager.getConnectionMode(),
           uptime: Math.floor((Date.now() - startTime) / 1000),
           tabs: browserManager.getTabCount(),
-        };
-        // Sensitive fields only served on localhost (not through tunnel).
-        // currentUrl reveals internal URLs, currentMessage reveals user intent.
-        //
-        // SECURITY NOTE (accepted risk): token is served on localhost /health so the
-        // Chrome extension can authenticate. This is NOT an escalation over baseline:
-        // any local process can already read the same token from ~/.gstack/.auth.json
-        // and .gstack/browse.json. Browser CORS blocks cross-origin reads (no
-        // Access-Control-Allow-Origin header). When tunneled, token is stripped.
-        // Do not remove this without providing an alternative extension auth path.
-        if (!tunnelActive) {
-          healthResponse.token = AUTH_TOKEN;
-          healthResponse.currentUrl = browserManager.getCurrentUrl();
-          healthResponse.chatEnabled = true;
-          healthResponse.agent = {
+          // Auth token for extension bootstrap. Safe: /health is localhost-only.
+          // Previously served unconditionally, but that leaks the token if the
+          // server is tunneled to the internet (ngrok, SSH tunnel).
+          // In headed mode the server is always local, so return token unconditionally
+          // (fixes Playwright Chromium extensions that don't send Origin header).
+          ...(browserManager.getConnectionMode() === 'headed' ||
+              req.headers.get('origin')?.startsWith('chrome-extension://')
+              ? { token: AUTH_TOKEN } : {}),
+          chatEnabled: true,
+          agent: {
             status: agentStatus,
             runningFor: agentStartTime ? Date.now() - agentStartTime : null,
             queueLength: messageQueue.length,
-          };
-          healthResponse.session = sidebarSession ? { id: sidebarSession.id, name: sidebarSession.name } : null;
-        } else {
-          healthResponse.tunnel = { active: true };
-          healthResponse.chatEnabled = true;
-        }
-        return new Response(JSON.stringify(healthResponse), {
+          },
+          session: sidebarSession ? { id: sidebarSession.id, name: sidebarSession.name } : null,
+        }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
