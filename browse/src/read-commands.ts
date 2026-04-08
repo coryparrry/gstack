@@ -5,12 +5,17 @@
  * console, network, cookies, storage, perf
  */
 
-import type { BrowserManager } from './browser-manager';
+import type { TabSession } from './tab-session';
 import { consoleBuffer, networkBuffer, dialogBuffer } from './buffers';
 import type { Page, Frame } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
 import { TEMP_DIR, isPathWithin } from './platform';
+import { inspectElement, formatInspectorResult, getModificationHistory } from './cdp-inspector';
+
+// Redaction patterns for sensitive cookie/storage values — exported for test coverage
+export const SENSITIVE_COOKIE_NAME = /(^|[_.-])(token|secret|key|password|credential|auth|jwt|session|csrf|sid)($|[_.-])|api.?key/i;
+export const SENSITIVE_COOKIE_VALUE = /^(eyJ|sk-|sk_live_|sk_test_|pk_live_|pk_test_|rk_live_|sk-ant-|ghp_|gho_|github_pat_|xox[bpsa]-|AKIA[A-Z0-9]{16}|AIza|SG\.|Bearer\s|sbp_)/;
 
 /** Detect await keyword, ignoring comments. Accepted risk: await in string literals triggers wrapping (harmless). */
 function hasAwait(code: string): boolean {
@@ -89,11 +94,11 @@ export async function getCleanText(page: Page | Frame): Promise<string> {
 export async function handleReadCommand(
   command: string,
   args: string[],
-  bm: BrowserManager
+  session: TabSession
 ): Promise<string> {
-  const page = bm.getPage();
+  const page = session.getPage();
   // Frame-aware target for content extraction
-  const target = bm.getActiveFrameOrPage();
+  const target = session.getActiveFrameOrPage();
 
   switch (command) {
     case 'text': {
@@ -103,7 +108,7 @@ export async function handleReadCommand(
     case 'html': {
       const selector = args[0];
       if (selector) {
-        const resolved = await bm.resolveRef(selector);
+        const resolved = await session.resolveRef(selector);
         if ('locator' in resolved) {
           return await resolved.locator.innerHTML({ timeout: 5000 });
         }
@@ -185,7 +190,7 @@ export async function handleReadCommand(
     case 'css': {
       const [selector, property] = args;
       if (!selector || !property) throw new Error('Usage: browse css <selector> <property>');
-      const resolved = await bm.resolveRef(selector);
+      const resolved = await session.resolveRef(selector);
       if ('locator' in resolved) {
         const value = await resolved.locator.evaluate(
           (el, prop) => getComputedStyle(el).getPropertyValue(prop),
@@ -207,7 +212,7 @@ export async function handleReadCommand(
     case 'attrs': {
       const selector = args[0];
       if (!selector) throw new Error('Usage: browse attrs <selector>');
-      const resolved = await bm.resolveRef(selector);
+      const resolved = await session.resolveRef(selector);
       if ('locator' in resolved) {
         const attrs = await resolved.locator.evaluate((el) => {
           const result: Record<string, string> = {};
@@ -271,7 +276,7 @@ export async function handleReadCommand(
       const selector = args[1];
       if (!property || !selector) throw new Error('Usage: browse is <property> <selector>\nProperties: visible, hidden, enabled, disabled, checked, editable, focused');
 
-      const resolved = await bm.resolveRef(selector);
+      const resolved = await session.resolveRef(selector);
       let locator;
       if ('locator' in resolved) {
         locator = resolved.locator;
@@ -299,7 +304,14 @@ export async function handleReadCommand(
 
     case 'cookies': {
       const cookies = await page.context().cookies();
-      return JSON.stringify(cookies, null, 2);
+      // Redact cookie values that look like secrets (consistent with storage redaction)
+      const redacted = cookies.map(c => {
+        if (SENSITIVE_COOKIE_NAME.test(c.name) || SENSITIVE_COOKIE_VALUE.test(c.value)) {
+          return { ...c, value: `[REDACTED — ${c.value.length} chars]` };
+        }
+        return c;
+      });
+      return JSON.stringify(redacted, null, 2);
     }
 
     case 'storage': {
@@ -350,6 +362,54 @@ export async function handleReadCommand(
       return Object.entries(timings)
         .map(([k, v]) => `${k.padEnd(12)} ${v}ms`)
         .join('\n');
+    }
+
+    case 'inspect': {
+      // Parse flags
+      let includeUA = false;
+      let showHistory = false;
+      let selector: string | undefined;
+
+      for (const arg of args) {
+        if (arg === '--all') {
+          includeUA = true;
+        } else if (arg === '--history') {
+          showHistory = true;
+        } else if (!selector) {
+          selector = arg;
+        }
+      }
+
+      // --history mode: return modification history
+      if (showHistory) {
+        const history = getModificationHistory();
+        if (history.length === 0) return '(no style modifications)';
+        return history.map((m, i) =>
+          `[${i}] ${m.selector} { ${m.property}: ${m.oldValue} → ${m.newValue} } (${m.source}, ${m.method})`
+        ).join('\n');
+      }
+
+      // If no selector given, check for stored inspector data
+      if (!selector) {
+        // Access stored inspector data from the server's in-memory state
+        // The server stores this when the extension picks an element via POST /inspector/pick
+        const stored = (bm as any)._inspectorData;
+        const storedTs = (bm as any)._inspectorTimestamp;
+        if (stored) {
+          const stale = storedTs && (Date.now() - storedTs > 60000);
+          let output = formatInspectorResult(stored, { includeUA });
+          if (stale) output = '⚠ Data may be stale (>60s old)\n\n' + output;
+          return output;
+        }
+        throw new Error('Usage: browse inspect [selector] [--all] [--history]\nOr pick an element in the Chrome sidebar first.');
+      }
+
+      // Direct inspection by selector
+      const result = await inspectElement(page, selector, { includeUA });
+      // Store for later retrieval
+      (bm as any)._inspectorData = result;
+      (bm as any)._inspectorTimestamp = Date.now();
+      return formatInspectorResult(result, { includeUA });
     }
 
     default:

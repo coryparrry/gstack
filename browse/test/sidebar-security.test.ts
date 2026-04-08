@@ -86,9 +86,11 @@ describe('Sidebar prompt injection defense', () => {
 
   // --- Model Selection ---
 
-  test('default model is opus', () => {
-    // The args array should include --model opus
-    expect(SERVER_SRC).toContain("'--model', 'opus'");
+  test('model routing defaults to opus for analysis tasks', () => {
+    // pickSidebarModel returns opus for ambiguous/analysis messages
+    expect(SERVER_SRC).toContain("return 'opus'");
+    // spawnClaude uses the model router
+    expect(SERVER_SRC).toContain("'--model', model");
   });
 
   // --- Trust Boundary ---
@@ -110,11 +112,11 @@ describe('Sidebar prompt injection defense', () => {
     // It should NOT rebuild args from scratch (the old bug)
     expect(AGENT_SRC).toContain('args || [');
     // Verify the destructured args come from queueEntry
-    expect(AGENT_SRC).toContain('const { prompt, args, stateFile, cwd } = queueEntry');
+    expect(AGENT_SRC).toContain('const { prompt, args, stateFile, cwd, tabId } = queueEntry');
   });
 
   test('sidebar-agent falls back to defaults if queue has no args', () => {
     // Backward compatibility: if old queue entries lack args, use defaults
-    expect(AGENT_SRC).toContain("'--allowedTools', 'Bash,Read,Glob,Grep'");
+    expect(AGENT_SRC).toContain("'--allowedTools', 'Bash,Read,Glob,Grep,Write'");
   });
 });

@@ -10,7 +10,8 @@ This document covers the command reference and internals of gstack's headless br
 | Read | `text`, `html`, `links`, `forms`, `accessibility` | Extract content |
 | Snapshot | `snapshot [-i] [-c] [-d N] [-s sel] [-D] [-a] [-o] [-C]` | Get refs, diff, annotate |
 | Interact | `click`, `fill`, `select`, `hover`, `type`, `press`, `scroll`, `wait`, `viewport`, `upload` | Use the page |
-| Inspect | `js`, `eval`, `css`, `attrs`, `is`, `console`, `network`, `dialog`, `cookies`, `storage`, `perf` | Debug and verify |
+| Inspect | `js`, `eval`, `css`, `attrs`, `is`, `console`, `network`, `dialog`, `cookies`, `storage`, `perf`, `inspect [selector] [--all]` | Debug and verify |
+| Style | `style <sel> <prop> <val>`, `style --undo [N]`, `cleanup [--all]`, `prettyscreenshot` | Live CSS editing and page cleanup |
 | Visual | `screenshot [--viewport] [--clip x,y,w,h] [sel\|@ref] [path]`, `pdf`, `responsive` | See what Claude sees |
 | Compare | `diff <url1> <url2>` | Spot differences between environments |
 | Dialogs | `dialog-accept [text]`, `dialog-dismiss` | Control alert/confirm/prompt handling |
@@ -111,6 +112,56 @@ The `screenshot` command supports four modes:
 Element crop accepts CSS selectors (`.class`, `#id`, `[attr]`) or `@e`/`@c` refs from `snapshot`. Auto-detection: `@e`/`@c` prefix = ref, `.`/`#`/`[` prefix = CSS selector, `--` prefix = flag, everything else = output path.
 
 Mutual exclusion: `--clip` + selector and `--viewport` + `--clip` both throw errors. Unknown flags (e.g. `--bogus`) also throw.
+
+### Batch endpoint
+
+`POST /batch` sends multiple commands in a single HTTP request. This eliminates per-command round-trip latency — critical for remote agents where each HTTP call costs 2-5s (e.g., Render → ngrok → laptop).
+
+```json
+POST /batch
+Authorization: Bearer <token>
+
+{
+  "commands": [
+    {"command": "text", "tabId": 1},
+    {"command": "text", "tabId": 2},
+    {"command": "snapshot", "args": ["-i"], "tabId": 3},
+    {"command": "click", "args": ["@e5"], "tabId": 4}
+  ]
+}
+```
+
+Response:
+```json
+{
+  "results": [
+    {"index": 0, "status": 200, "result": "...page text...", "command": "text", "tabId": 1},
+    {"index": 1, "status": 200, "result": "...page text...", "command": "text", "tabId": 2},
+    {"index": 2, "status": 200, "result": "...snapshot...", "command": "snapshot", "tabId": 3},
+    {"index": 3, "status": 403, "result": "{\"error\":\"Element not found\"}", "command": "click", "tabId": 4}
+  ],
+  "duration": 2340,
+  "total": 4,
+  "succeeded": 3,
+  "failed": 1
+}
+```
+
+**Design decisions:**
+- Each command routes through `handleCommandInternal` — full security pipeline (scope checks, domain validation, tab ownership, content wrapping) enforced per command
+- Per-command error isolation: one failure doesn't abort the batch
+- Max 50 commands per batch
+- Nested batches rejected
+- Rate limiting: 1 batch = 1 request against the per-agent limit (individual commands skip rate check)
+- Ref scoping is already per-tab — no changes needed
+
+**Usage pattern** (agent crawling 20 pages):
+```
+# Step 1: Open 20 tabs (via individual newtab commands or batch)
+# Step 2: Read all 20 pages at once
+POST /batch → [{"command": "text", "tabId": 5}, {"command": "text", "tabId": 6}, ...]
+# → 20 page contents in ~2-3 seconds total vs ~40-100 seconds serial
+```
 
 ### Authentication
 
