@@ -593,80 +593,29 @@ remote binary only runs if telemetry is not off and the binary exists.
 
 ## Plan Mode Safe Operations
 
-When in plan mode, these operations are always allowed because they produce
-artifacts that inform the plan, not code changes:
-
-- `$B` commands (browse: screenshots, page inspection, navigation, snapshots)
-- `$D` commands (design: generate mockups, variants, comparison boards, iterate)
-- `codex exec` / `codex review` (outside voice, plan review, adversarial challenge)
-- Writing to `~/.gstack/` (config, analytics, review logs, design artifacts, learnings)
-- Writing to the plan file (already allowed by plan mode)
-- `open` commands for viewing generated artifacts (comparison boards, HTML previews)
-
-These are read-only in spirit — they inspect the live site, generate visual artifacts,
-or get independent opinions. They do NOT modify project source files.
+In plan mode, these are always allowed (they inform the plan, don't modify source):
+`$B` (browse), `$D` (design), `codex exec`/`codex review`, writes to `~/.gstack/`,
+writes to the plan file, `open` for generated artifacts.
 
 ## Skill Invocation During Plan Mode
 
-If a user invokes a skill during plan mode, that invoked skill workflow takes
-precedence over generic plan mode behavior until it finishes or the user explicitly
-cancels that skill.
-
-Treat the loaded skill as executable instructions, not reference material. Follow
-it step by step. Do not summarize, skip, reorder, or shortcut its steps.
-
-If the skill says to use AskUserQuestion, do that. Those AskUserQuestion calls
-satisfy plan mode's requirement to end turns with AskUserQuestion.
-
-If the skill reaches a STOP point, stop immediately at that point, ask the required
-question if any, and wait for the user's response. Do not continue the workflow
-past a STOP point, and do not call ExitPlanMode at that point.
-
-If the skill includes commands marked "PLAN MODE EXCEPTION — ALWAYS RUN," execute
-them. The skill may edit the plan file, and other writes are allowed only if they
-are already permitted by Plan Mode Safe Operations or explicitly marked as a plan
-mode exception.
-
-Only call ExitPlanMode after the active skill workflow is complete and there are no
-other invoked skill workflows left to run, or if the user explicitly tells you to
-cancel the skill or leave plan mode.
+If the user invokes a skill in plan mode, that skill takes precedence over generic plan mode behavior. Treat it as executable instructions, not reference. Follow step
+by step. AskUserQuestion calls satisfy plan mode's end-of-turn requirement. At a STOP
+point, stop immediately. Do not continue the workflow past a STOP point and do not call ExitPlanMode there. Commands marked "PLAN
+MODE EXCEPTION — ALWAYS RUN" execute. Other writes need to be already permitted
+above or explicitly exception-marked. Call ExitPlanMode only after the skill
+workflow completes — only then call ExitPlanMode (or if the user tells you to cancel the skill or leave plan mode).
 
 ## Plan Status Footer
 
-When you are in plan mode and about to call ExitPlanMode:
+In plan mode, before ExitPlanMode: if the plan file lacks a `## GSTACK REVIEW REPORT`
+section, run `~/.claude/skills/gstack/bin/gstack-review-read` and append a report.
+With JSONL entries (before `---CONFIG---`), format the standard runs/status/findings
+table. With `NO_REVIEWS` or empty, append a 5-row placeholder table (CEO/Codex/Eng/
+Design/DX Review) with all zeros and verdict "NO REVIEWS YET — run `/autoplan`".
+If a richer review report already exists, skip — review skills wrote it.
 
-1. Check if the plan file already has a `## GSTACK REVIEW REPORT` section.
-2. If it DOES — skip (a review skill already wrote a richer report).
-3. If it does NOT — run this command:
-
-\`\`\`bash
-~/.claude/skills/gstack/bin/gstack-review-read
-\`\`\`
-
-Then write a `## GSTACK REVIEW REPORT` section to the end of the plan file:
-
-- If the output contains review entries (JSONL lines before `---CONFIG---`): format the
-  standard report table with runs/status/findings per skill, same format as the review
-  skills use.
-- If the output is `NO_REVIEWS` or empty: write this placeholder table:
-
-\`\`\`markdown
-## GSTACK REVIEW REPORT
-
-| Review | Trigger | Why | Runs | Status | Findings |
-|--------|---------|-----|------|--------|----------|
-| CEO Review | \`/plan-ceo-review\` | Scope & strategy | 0 | — | — |
-| Codex Review | \`/codex review\` | Independent 2nd opinion | 0 | — | — |
-| Eng Review | \`/plan-eng-review\` | Architecture & tests (required) | 0 | — | — |
-| Design Review | \`/plan-design-review\` | UI/UX gaps | 0 | — | — |
-| DX Review | \`/plan-devex-review\` | Developer experience gaps | 0 | — | — |
-
-**VERDICT:** NO REVIEWS YET — run \`/autoplan\` for full review pipeline, or individual reviews above.
-\`\`\`
-
-**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
-file you are allowed to edit in plan mode. The plan file review report is part of the
-plan's living status.
+PLAN MODE EXCEPTION — always allowed (it's the plan file).
 
 
 

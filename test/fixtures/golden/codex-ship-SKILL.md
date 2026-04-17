@@ -600,80 +600,29 @@ remote binary only runs if telemetry is not off and the binary exists.
 
 ## Plan Mode Safe Operations
 
-When in plan mode, these operations are always allowed because they produce
-artifacts that inform the plan, not code changes:
-
-- `$B` commands (browse: screenshots, page inspection, navigation, snapshots)
-- `$D` commands (design: generate mockups, variants, comparison boards, iterate)
-- `codex exec` / `codex review` (outside voice, plan review, adversarial challenge)
-- Writing to `~/.gstack/` (config, analytics, review logs, design artifacts, learnings)
-- Writing to the plan file (already allowed by plan mode)
-- `open` commands for viewing generated artifacts (comparison boards, HTML previews)
-
-These are read-only in spirit — they inspect the live site, generate visual artifacts,
-or get independent opinions. They do NOT modify project source files.
+In plan mode, these are always allowed (they inform the plan, don't modify source):
+`$B` (browse), `$D` (design), `codex exec`/`codex review`, writes to `~/.gstack/`,
+writes to the plan file, `open` for generated artifacts.
 
 ## Skill Invocation During Plan Mode
 
-If a user invokes a skill during plan mode, that invoked skill workflow takes
-precedence over generic plan mode behavior until it finishes or the user explicitly
-cancels that skill.
-
-Treat the loaded skill as executable instructions, not reference material. Follow
-it step by step. Do not summarize, skip, reorder, or shortcut its steps.
-
-If the skill says to use AskUserQuestion, do that. Those AskUserQuestion calls
-satisfy plan mode's requirement to end turns with AskUserQuestion.
-
-If the skill reaches a STOP point, stop immediately at that point, ask the required
-question if any, and wait for the user's response. Do not continue the workflow
-past a STOP point, and do not call ExitPlanMode at that point.
-
-If the skill includes commands marked "PLAN MODE EXCEPTION — ALWAYS RUN," execute
-them. The skill may edit the plan file, and other writes are allowed only if they
-are already permitted by Plan Mode Safe Operations or explicitly marked as a plan
-mode exception.
-
-Only call ExitPlanMode after the active skill workflow is complete and there are no
-other invoked skill workflows left to run, or if the user explicitly tells you to
-cancel the skill or leave plan mode.
+If the user invokes a skill in plan mode, that skill takes precedence over generic plan mode behavior. Treat it as executable instructions, not reference. Follow step
+by step. AskUserQuestion calls satisfy plan mode's end-of-turn requirement. At a STOP
+point, stop immediately. Do not continue the workflow past a STOP point and do not call ExitPlanMode there. Commands marked "PLAN
+MODE EXCEPTION — ALWAYS RUN" execute. Other writes need to be already permitted
+above or explicitly exception-marked. Call ExitPlanMode only after the skill
+workflow completes — only then call ExitPlanMode (or if the user tells you to cancel the skill or leave plan mode).
 
 ## Plan Status Footer
 
-When you are in plan mode and about to call ExitPlanMode:
+In plan mode, before ExitPlanMode: if the plan file lacks a `## GSTACK REVIEW REPORT`
+section, run `$GSTACK_ROOT/bin/gstack-review-read` and append a report.
+With JSONL entries (before `---CONFIG---`), format the standard runs/status/findings
+table. With `NO_REVIEWS` or empty, append a 5-row placeholder table (CEO/Codex/Eng/
+Design/DX Review) with all zeros and verdict "NO REVIEWS YET — run `/autoplan`".
+If a richer review report already exists, skip — review skills wrote it.
 
-1. Check if the plan file already has a `## GSTACK REVIEW REPORT` section.
-2. If it DOES — skip (a review skill already wrote a richer report).
-3. If it does NOT — run this command:
-
-\`\`\`bash
-$GSTACK_ROOT/bin/gstack-review-read
-\`\`\`
-
-Then write a `## GSTACK REVIEW REPORT` section to the end of the plan file:
-
-- If the output contains review entries (JSONL lines before `---CONFIG---`): format the
-  standard report table with runs/status/findings per skill, same format as the review
-  skills use.
-- If the output is `NO_REVIEWS` or empty: write this placeholder table:
-
-\`\`\`markdown
-## GSTACK REVIEW REPORT
-
-| Review | Trigger | Why | Runs | Status | Findings |
-|--------|---------|-----|------|--------|----------|
-| CEO Review | \`/plan-ceo-review\` | Scope & strategy | 0 | — | — |
-| Codex Review | \`/codex review\` | Independent 2nd opinion | 0 | — | — |
-| Eng Review | \`/plan-eng-review\` | Architecture & tests (required) | 0 | — | — |
-| Design Review | \`/plan-design-review\` | UI/UX gaps | 0 | — | — |
-| DX Review | \`/plan-devex-review\` | Developer experience gaps | 0 | — | — |
-
-**VERDICT:** NO REVIEWS YET — run \`/autoplan\` for full review pipeline, or individual reviews above.
-\`\`\`
-
-**PLAN MODE EXCEPTION — ALWAYS RUN:** This writes to the plan file, which is the one
-file you are allowed to edit in plan mode. The plan file review report is part of the
-plan's living status.
+PLAN MODE EXCEPTION — always allowed (it's the plan file).
 
 ## Step 0: Detect platform and base branch
 
@@ -1351,46 +1300,24 @@ Format: commit as `test: regression test for {what broke}`
 Include BOTH code paths and user flows in the same diagram. Mark E2E-worthy and eval-worthy paths:
 
 ```
-CODE PATH COVERAGE
-===========================
-[+] src/services/billing.ts
-    │
-    ├── processPayment()
-    │   ├── [★★★ TESTED] Happy path + card declined + timeout — billing.test.ts:42
-    │   ├── [GAP]         Network timeout — NO TEST
-    │   └── [GAP]         Invalid currency — NO TEST
-    │
-    └── refundPayment()
-        ├── [★★  TESTED] Full refund — billing.test.ts:89
-        └── [★   TESTED] Partial refund (checks non-throw only) — billing.test.ts:101
+CODE PATHS                                            USER FLOWS
+[+] src/services/billing.ts                           [+] Payment checkout
+  ├── processPayment()                                  ├── [★★★ TESTED] Complete purchase — checkout.e2e.ts:15
+  │   ├── [★★★ TESTED] happy + declined + timeout      ├── [GAP] [→E2E] Double-click submit
+  │   ├── [GAP]         Network timeout                 └── [GAP]        Navigate away mid-payment
+  │   └── [GAP]         Invalid currency
+  └── refundPayment()                                 [+] Error states
+      ├── [★★  TESTED] Full refund — :89                ├── [★★  TESTED] Card declined message
+      └── [★   TESTED] Partial (non-throw only) — :101  └── [GAP]        Network timeout UX
 
-USER FLOW COVERAGE
-===========================
-[+] Payment checkout flow
-    │
-    ├── [★★★ TESTED] Complete purchase — checkout.e2e.ts:15
-    ├── [GAP] [→E2E] Double-click submit — needs E2E, not just unit
-    ├── [GAP]         Navigate away during payment — unit test sufficient
-    └── [★   TESTED]  Form validation errors (checks render only) — checkout.test.ts:40
+LLM integration: [GAP] [→EVAL] Prompt template change — needs eval test
 
-[+] Error states
-    │
-    ├── [★★  TESTED] Card declined message — billing.test.ts:58
-    ├── [GAP]         Network timeout UX (what does user see?) — NO TEST
-    └── [GAP]         Empty cart submission — NO TEST
-
-[+] LLM integration
-    │
-    └── [GAP] [→EVAL] Prompt template change — needs eval test
-
-─────────────────────────────────
-COVERAGE: 5/13 paths tested (38%)
-  Code paths: 3/5 (60%)
-  User flows: 2/8 (25%)
-QUALITY:  ★★★: 2  ★★: 2  ★: 1
-GAPS: 8 paths need tests (2 need E2E, 1 needs eval)
-─────────────────────────────────
+COVERAGE: 5/13 paths tested (38%)  |  Code paths: 3/5 (60%)  |  User flows: 2/8 (25%)
+QUALITY: ★★★:2 ★★:2 ★:1  |  GAPS: 8 (2 E2E, 1 eval)
 ```
+
+Legend: ★★★ behavior + edge + error  |  ★★ happy path  |  ★ smoke check
+[→E2E] = needs integration test  |  [→EVAL] = needs LLM eval
 
 **Fast path:** All paths covered → "Step 7: All new code paths have test coverage ✓" Continue.
 
