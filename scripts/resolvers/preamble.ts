@@ -163,7 +163,7 @@ or invoking other gstack skills, use the \`/gstack-\` prefix (e.g., \`/gstack-qa
 of \`/qa\`, \`/gstack-ship\` instead of \`/ship\`). Disk paths are unaffected — always use
 \`${ctx.paths.skillRoot}/[skill-name]/SKILL.md\` for reading skill files.
 
-If output shows \`UPGRADE_AVAILABLE <old> <new>\`: read \`${ctx.paths.runtimeRoot}/gstack-upgrade/SKILL.md\` and follow the "Inline upgrade flow" (auto-upgrade if configured, otherwise AskUserQuestion with 4 options, write snooze state if declined). If \`JUST_UPGRADED <from> <to>\`: tell user "Running gstack v{to} (just updated!)" and continue.`;
+If output shows \`UPGRADE_AVAILABLE <old> <new>\`: read \`${ctx.paths.skillRoot}/gstack-upgrade/SKILL.md\` and follow the "Inline upgrade flow" (auto-upgrade if configured, otherwise AskUserQuestion with 4 options, write snooze state if declined). If \`JUST_UPGRADED <from> <to>\`: tell user "Running gstack v{to} (just updated!)" and continue.`;
 }
 
 function generateWritingStyleMigration(ctx: TemplateContext): string {
@@ -314,13 +314,18 @@ This only happens once per project. If \`HAS_ROUTING\` is \`yes\` or \`ROUTING_D
 }
 
 function generateVendoringDeprecation(ctx: TemplateContext): string {
+  const vendoredRoot = ctx.host === 'codex' ? '.agents/skills/gstack/' : '.claude/skills/gstack/';
+  const vendoredParent = ctx.host === 'codex' ? '.agents/' : '.claude/';
+  const hostDoc = ctx.host === 'codex' ? 'AGENTS.md' : 'CLAUDE.md';
+  const teamSetupRoot = ctx.host === 'codex' ? '~/.codex/skills/gstack' : '~/.claude/skills/gstack';
+
   return `If \`VENDORED_GSTACK\` is \`yes\`: This project has a vendored copy of gstack at
-\`.claude/skills/gstack/\`. Vendoring is deprecated. We will not keep vendored copies
+\`${vendoredRoot}\`. Vendoring is deprecated. We will not keep vendored copies
 up to date, so this project's gstack will fall behind.
 
 Use AskUserQuestion (one-time per project, check for \`~/.gstack/.vendoring-warned-$SLUG\` marker):
 
-> This project has gstack vendored in \`.claude/skills/gstack/\`. Vendoring is deprecated.
+> This project has gstack vendored in \`${vendoredRoot}\`. Vendoring is deprecated.
 > We won't keep this copy up to date, so you'll fall behind on new features and fixes.
 >
 > Want to migrate to team mode? It takes about 30 seconds.
@@ -330,11 +335,11 @@ Options:
 - B) No, I'll handle it myself
 
 If A:
-1. Run \`git rm -r .claude/skills/gstack/\`
-2. Run \`echo '.claude/skills/gstack/' >> .gitignore\`
+1. Run \`git rm -r ${vendoredRoot}\`
+2. Run \`echo '${vendoredRoot}' >> .gitignore\`
 3. Run \`${ctx.paths.binDir}/gstack-team-init required\` (or \`optional\`)
-4. Run \`git add .claude/ .gitignore CLAUDE.md && git commit -m "chore: migrate gstack from vendored to team mode"\`
-5. Tell the user: "Done. Each developer now runs: \`cd ~/.claude/skills/gstack && ./setup --team\`"
+4. Run \`git add ${vendoredParent} .gitignore ${hostDoc} && git commit -m "chore: migrate gstack from vendored to team mode"\`
+5. Tell the user: "Done. Each developer now runs: \`cd ${teamSetupRoot} && ./setup --team\`"
 
 If B: say "OK, you're on your own to keep the vendored copy up to date."
 

@@ -9,9 +9,11 @@
  * to avoid prompt bloat.
  */
 import type { TemplateContext } from './types';
+import { externalSkillName } from './codex-helpers';
 
 export function generateDxFramework(ctx: TemplateContext): string {
-  const hallOfFamePath = `${ctx.paths.skillRoot}/plan-devex-review/dx-hall-of-fame.md`;
+  const hallOfFameDir = ctx.host === 'claude' ? 'plan-devex-review' : externalSkillName('plan-devex-review');
+  const hallOfFamePath = `${ctx.paths.skillRoot}/${hallOfFameDir}/dx-hall-of-fame.md`;
 
   return `## DX First Principles
 

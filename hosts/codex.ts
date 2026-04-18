@@ -33,6 +33,10 @@ const codex: HostConfig = {
 
   pathRewrites: [
     { from: '${HOME}/.claude/skills/gstack/document-release/SKILL.md', to: '$GSTACK_SKILLS_ROOT/gstack-document-release/SKILL.md' },
+    { from: '~/.claude/skills/gstack/plan-ceo-review/SKILL.md', to: '$GSTACK_SKILLS_ROOT/gstack-plan-ceo-review/SKILL.md' },
+    { from: '~/.claude/skills/gstack/plan-design-review/SKILL.md', to: '$GSTACK_SKILLS_ROOT/gstack-plan-design-review/SKILL.md' },
+    { from: '~/.claude/skills/gstack/plan-eng-review/SKILL.md', to: '$GSTACK_SKILLS_ROOT/gstack-plan-eng-review/SKILL.md' },
+    { from: '~/.claude/skills/gstack/plan-devex-review/SKILL.md', to: '$GSTACK_SKILLS_ROOT/gstack-plan-devex-review/SKILL.md' },
     { from: '~/.claude/skills/gstack', to: '$GSTACK_ROOT' },
     { from: '.claude/skills/review', to: '$GSTACK_ROOT/review' },
     { from: '.claude/skills/gstack', to: '.agents/skills/gstack' },

@@ -1857,6 +1857,70 @@ describe('Codex generation (--host codex)', () => {
     expect(content).not.toContain('${HOME}/.agents/skills/gstack/document-release/SKILL.md');
   });
 
+  test('cross-skill Codex reads use exported gstack-* skill directory names', () => {
+    const paths = [
+      path.join(AGENTS_DIR, 'gstack-autoplan', 'SKILL.md'),
+      path.join(AGENTS_DIR, 'gstack-plan-ceo-review', 'SKILL.md'),
+      path.join(AGENTS_DIR, 'gstack-plan-eng-review', 'SKILL.md'),
+      path.join(AGENTS_DIR, 'gstack-plan-devex-review', 'SKILL.md'),
+    ];
+
+    for (const skillPath of paths) {
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toContain('$GSTACK_SKILLS_ROOT/gstack-office-hours/SKILL.md');
+      expect(content).not.toContain('$GSTACK_SKILLS_ROOT/office-hours/SKILL.md');
+    }
+  });
+
+  test('Codex DX references use the exported gstack-plan-devex-review sidecar path', () => {
+    const paths = [
+      path.join(AGENTS_DIR, 'gstack-devex-review', 'SKILL.md'),
+      path.join(AGENTS_DIR, 'gstack-plan-devex-review', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack-devex-review', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack-plan-devex-review', 'SKILL.md'),
+    ];
+
+    for (const skillPath of paths) {
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toContain('$GSTACK_SKILLS_ROOT/gstack-plan-devex-review/dx-hall-of-fame.md');
+      expect(content).not.toContain('$GSTACK_SKILLS_ROOT/plan-devex-review/dx-hall-of-fame.md');
+    }
+  });
+
+  test('autoplan reads review-plan skills from the shared Codex skill root', () => {
+    const paths = [
+      path.join(AGENTS_DIR, 'gstack-autoplan', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack-autoplan', 'SKILL.md'),
+    ];
+
+    for (const skillPath of paths) {
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toContain('$GSTACK_SKILLS_ROOT/gstack-plan-ceo-review/SKILL.md');
+      expect(content).toContain('$GSTACK_SKILLS_ROOT/gstack-plan-eng-review/SKILL.md');
+      expect(content).toContain('$GSTACK_SKILLS_ROOT/gstack-plan-devex-review/SKILL.md');
+      expect(content).not.toContain('$GSTACK_ROOT/plan-ceo-review/SKILL.md');
+      expect(content).not.toContain('$GSTACK_ROOT/plan-eng-review/SKILL.md');
+      expect(content).not.toContain('$GSTACK_ROOT/plan-devex-review/SKILL.md');
+    }
+  });
+
+  test('Codex upgrade handoff reads gstack-upgrade from the shared skill root', () => {
+    const paths = [
+      path.join(AGENTS_DIR, 'gstack', 'SKILL.md'),
+      path.join(AGENTS_DIR, 'gstack-ship', 'SKILL.md'),
+      path.join(AGENTS_DIR, 'gstack-review', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack-ship', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack-review', 'SKILL.md'),
+    ];
+
+    for (const skillPath of paths) {
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toContain('$GSTACK_SKILLS_ROOT/gstack-upgrade/SKILL.md');
+      expect(content).not.toContain('$GSTACK_ROOT/gstack-upgrade/SKILL.md');
+    }
+  });
+
   test('all four path rewrite rules produce correct output', () => {
     const reviewContent = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-review', 'SKILL.md'), 'utf-8');
     const shipContent = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-ship', 'SKILL.md'), 'utf-8');
@@ -1887,6 +1951,7 @@ describe('Codex generation (--host codex)', () => {
       // No skill should reference Claude paths
       expect(content).not.toContain('~/.claude/skills');
       expect(content).not.toContain('.claude/skills');
+      expect(content).not.toContain('git add .claude/');
       if (content.includes('gstack-config') || content.includes('gstack-update-check') || content.includes('gstack-telemetry-log')) {
         expect(content).toContain('$GSTACK_ROOT');
       }
