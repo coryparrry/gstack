@@ -30,6 +30,18 @@ export interface CodexResult {
   stderr: string;           // Stderr output (skill loading errors, auth failures)
 }
 
+export interface CodexSkillInstall {
+  skillDir: string;
+  skillName?: string;
+}
+
+export interface CodexCommandProbe {
+  available: boolean;
+  reason: string | null;
+  command: string[] | null;
+  discoveredPath: string | null;
+}
+
 // --- JSONL parser (ported from Python in codex/SKILL.md.tmpl) ---
 
 export interface ParsedCodexJSONL {
@@ -95,6 +107,66 @@ export function parseCodexJSONL(lines: string[]): ParsedCodexJSONL {
   };
 }
 
+/**
+ * Detect whether the current environment can execute the Codex CLI.
+ *
+ * On Windows, Codex may resolve to a packaged WindowsApps binary path that is
+ * visible to PATH lookups but not executable from Bun's child-process API. In
+ * that case we fail closed and let E2E tests skip with an actionable reason.
+ */
+export function probeCodexCommand(): CodexCommandProbe {
+  const envOverride = process.env.CODEX_BIN?.trim();
+  if (envOverride) {
+    return {
+      available: true,
+      reason: null,
+      command: [envOverride],
+      discoveredPath: envOverride,
+    };
+  }
+
+  const lookup = process.platform === 'win32'
+    ? Bun.spawnSync(['where.exe', 'codex'])
+    : Bun.spawnSync(['which', 'codex']);
+  if (lookup.exitCode !== 0) {
+    return {
+      available: false,
+      reason: 'codex binary not found',
+      command: null,
+      discoveredPath: null,
+    };
+  }
+
+  const discoveredPath = lookup.stdout.toString().split(/\r?\n/).find(Boolean)?.trim() || null;
+  if (!discoveredPath) {
+    return {
+      available: false,
+      reason: 'codex binary not found',
+      command: null,
+      discoveredPath: null,
+    };
+  }
+
+  if (
+    process.platform === 'win32'
+    && /\\WindowsApps\\OpenAI\.Codex_/i.test(discoveredPath)
+  ) {
+    return {
+      available: false,
+      reason: `codex resolves to WindowsApps package path that Bun cannot execute directly: ${discoveredPath}`,
+      command: null,
+      discoveredPath,
+    };
+  }
+
+  return {
+    available: true,
+    reason: null,
+    command: ['codex'],
+    discoveredPath,
+  };
+}
+
 // --- Skill installation helper ---
 
 /**
@@ -104,28 +176,43 @@ export function parseCodexJSONL(lines: string[]): ParsedCodexJSONL {
  *
  * Returns the temp HOME path. Caller is responsible for cleanup.
  */
+export function installSkillsToTempHome(
+  skills: CodexSkillInstall[],
+  tempHome?: string,
+): string {
+  const home = tempHome || fs.mkdtempSync(path.join(os.tmpdir(), 'codex-e2e-'));
+  for (const skill of skills) {
+    const skillName = skill.skillName || path.basename(skill.skillDir) || 'gstack';
+    const destDir = path.join(home, '.codex', 'skills', skillName);
+    fs.mkdirSync(destDir, { recursive: true });
+
+    const srcSkill = path.join(skill.skillDir, 'SKILL.md');
+    if (fs.existsSync(srcSkill)) {
+      fs.copyFileSync(srcSkill, path.join(destDir, 'SKILL.md'));
+    }
+
+    const srcOpenAIYaml = path.join(skill.skillDir, 'agents', 'openai.yaml');
+    if (fs.existsSync(srcOpenAIYaml)) {
+      const destAgentsDir = path.join(destDir, 'agents');
+      fs.mkdirSync(destAgentsDir, { recursive: true });
+      fs.copyFileSync(srcOpenAIYaml, path.join(destAgentsDir, 'openai.yaml'));
+    }
+  }
+  return home;
+}
+
 export function installSkillToTempHome(
   skillDir: string,
   skillName: string,
   tempHome?: string,
 ): string {
-  const home = tempHome || fs.mkdtempSync(path.join(os.tmpdir(), 'codex-e2e-'));
-  const destDir = path.join(home, '.codex', 'skills', skillName);
-  fs.mkdirSync(destDir, { recursive: true });
+  return installSkillsToTempHome([{ skillDir, skillName }], tempHome);
+}
 
-  const srcSkill = path.join(skillDir, 'SKILL.md');
-  if (fs.existsSync(srcSkill)) {
-    fs.copyFileSync(srcSkill, path.join(destDir, 'SKILL.md'));
-  }
-
-  const srcOpenAIYaml = path.join(skillDir, 'agents', 'openai.yaml');
-  if (fs.existsSync(srcOpenAIYaml)) {
-    const destAgentsDir = path.join(destDir, 'agents');
-    fs.mkdirSync(destAgentsDir, { recursive: true });
-    fs.copyFileSync(srcOpenAIYaml, path.join(destAgentsDir, 'openai.yaml'));
-  }
-
-  return home;
+export function writeProjectAgentsMd(projectDir: string, contents: string): string {
+  const agentsPath = path.join(projectDir, 'AGENTS.md');
+  fs.writeFileSync(agentsPath, contents);
+  return agentsPath;
 }
 
 // --- Main runner ---
@@ -142,6 +229,8 @@ export async function runCodexSkill(opts: {
   timeoutMs?: number;       // Default 300000 (5 min)
   cwd?: string;             // Working directory
   skillName?: string;       // Skill name for installation (default: dirname)
+  skills?: CodexSkillInstall[]; // Additional skills to install into temp HOME
+  projectInstructions?: string; // Optional project-level AGENTS.md content
   sandbox?: string;         // Sandbox mode (default: 'read-only')
 }): Promise<CodexResult> {
   const {
@@ -150,17 +239,18 @@ export async function runCodexSkill(opts: {
     timeoutMs = 300_000,
     cwd,
     skillName,
+    skills,
+    projectInstructions,
     sandbox = 'read-only',
   } = opts;
 
   const startTime = Date.now();
   const name = skillName || path.basename(skillDir) || 'gstack';
 
-  // Check if codex binary exists
-  const whichResult = Bun.spawnSync(['which', 'codex']);
-  if (whichResult.exitCode !== 0) {
+  const codex = probeCodexCommand();
+  if (!codex.available || !codex.command) {
     return {
-      output: 'SKIP: codex binary not found',
+      output: `SKIP: ${codex.reason || 'codex binary not found'}`,
       reasoning: [],
       toolCalls: [],
       tokens: 0,
@@ -168,7 +258,7 @@ export async function runCodexSkill(opts: {
       durationMs: Date.now() - startTime,
       sessionId: null,
       rawLines: [],
-      stderr: '',
+      stderr: codex.reason || '',
     };
   }
 
@@ -177,7 +267,10 @@ export async function runCodexSkill(opts: {
   const realHome = os.homedir();
 
   try {
-    installSkillToTempHome(skillDir, name, tempHome);
+    installSkillsToTempHome(
+      skills && skills.length > 0 ? skills : [{ skillDir, skillName: name }],
+      tempHome,
+    );
 
     // Symlink real Codex auth config so codex can authenticate from temp HOME.
     // Codex stores auth in ~/.codex/ — we need the config but not the skills
@@ -198,11 +291,16 @@ export async function runCodexSkill(opts: {
       }
     }
 
+    if (projectInstructions) {
+      if (!cwd) throw new Error('projectInstructions requires cwd');
+      writeProjectAgentsMd(cwd, projectInstructions);
+    }
+
     // Build codex exec command
     const args = ['exec', prompt, '--json', '-s', sandbox];
 
     // Spawn codex with temp HOME so it discovers our installed skill
-    const proc = Bun.spawn(['codex', ...args], {
+    const proc = Bun.spawn([...codex.command, ...args], {
       cwd: cwd || skillDir,
       stdout: 'pipe',
       stderr: 'pipe',
