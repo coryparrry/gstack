@@ -97,13 +97,21 @@ function externalSkillName(skillDir: string, frontmatterName?: string): string {
   return `gstack-${baseName}`;
 }
 
-function extractNameAndDescription(content: string): { name: string; description: string } {
-  const fmStart = content.indexOf('---\n');
-  if (fmStart !== 0) return { name: '', description: '' };
-  const fmEnd = content.indexOf('\n---', fmStart + 4);
-  if (fmEnd === -1) return { name: '', description: '' };
+function parseFrontmatter(content: string): { frontmatter: string; body: string } | null {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return null;
 
-  const frontmatter = content.slice(fmStart + 4, fmEnd);
+  return {
+    frontmatter: match[1].replace(/\r\n/g, '\n'),
+    body: content.slice(match[0].length),
+  };
+}
+
+function extractNameAndDescription(content: string): { name: string; description: string } {
+  const parsed = parseFrontmatter(content);
+  if (!parsed) return { name: '', description: '' };
+
+  const { frontmatter } = parsed;
   const nameMatch = frontmatter.match(/^name:\s*(.+)$/m);
   const name = nameMatch ? nameMatch[1].trim() : '';
 
@@ -142,11 +150,9 @@ function extractNameAndDescription(content: string): { name: string; description
  * Returns an array of trigger strings, or [] if no voice-triggers field.
  */
 function extractVoiceTriggers(content: string): string[] {
-  const fmStart = content.indexOf('---\n');
-  if (fmStart !== 0) return [];
-  const fmEnd = content.indexOf('\n---', fmStart + 4);
-  if (fmEnd === -1) return [];
-  const frontmatter = content.slice(fmStart + 4, fmEnd);
+  const parsed = parseFrontmatter(content);
+  if (!parsed) return [];
+  const { frontmatter } = parsed;
 
   const triggers: string[] = [];
   let inVoice = false;
@@ -171,7 +177,7 @@ function processVoiceTriggers(content: string): string {
   if (triggers.length === 0) return content;
 
   // Strip voice-triggers block from frontmatter
-  content = content.replace(/^voice-triggers:\n(?:\s+-\s+"[^"]*"\n?)*/m, '');
+  content = content.replace(/^voice-triggers:\r?\n(?:\s+-\s+"[^"]*"\r?\n?)*/m, '');
 
   // Get current description (after stripping voice-triggers, so it's clean)
   const { description } = extractNameAndDescription(content);
@@ -182,8 +188,8 @@ function processVoiceTriggers(content: string): string {
   const newDescription = description + '\n' + voiceLine;
 
   // Replace old indented description with new in frontmatter
-  const oldIndented = description.split('\n').map(l => `  ${l}`).join('\n');
-  const newIndented = newDescription.split('\n').map(l => `  ${l}`).join('\n');
+  const oldIndented = description.split(/\r?\n/).map(l => `  ${l}`).join('\n');
+  const newIndented = newDescription.split(/\r?\n/).map(l => `  ${l}`).join('\n');
   content = content.replace(oldIndented, newIndented);
 
   return content;
@@ -215,6 +221,75 @@ policy:
 `;
 }
 
+interface AppExportSkill {
+  name: string;
+  skillPath: string;
+  metadataPath: string | null;
+}
+
+function writeAppExportSkill(
+  host: Host,
+  skillName: string,
+  content: string,
+  metadataContent: string | null,
+): AppExportSkill | null {
+  const hostConfig = getHostConfig(host);
+  if (!hostConfig.appExport) return null;
+
+  const exportRoot = path.join(ROOT, hostConfig.appExport.root);
+  const skillDir = path.join(exportRoot, hostConfig.appExport.skillRoot, skillName);
+  fs.mkdirSync(skillDir, { recursive: true });
+
+  const skillPath = path.join(skillDir, 'SKILL.md');
+  fs.writeFileSync(skillPath, content);
+
+  let metadataPath: string | null = null;
+  if (metadataContent) {
+    const agentsDir = path.join(skillDir, 'agents');
+    fs.mkdirSync(agentsDir, { recursive: true });
+    metadataPath = path.join(agentsDir, 'openai.yaml');
+    fs.writeFileSync(metadataPath, metadataContent);
+  }
+
+  return {
+    name: skillName,
+    skillPath: path.relative(exportRoot, skillPath).replace(/\\/g, '/'),
+    metadataPath: metadataPath ? path.relative(exportRoot, metadataPath).replace(/\\/g, '/') : null,
+  };
+}
+
+function writeAppExportManifest(host: Host, skills: AppExportSkill[]): void {
+  const hostConfig = getHostConfig(host);
+  if (!hostConfig.appExport) return;
+
+  const exportRoot = path.join(ROOT, hostConfig.appExport.root);
+  fs.mkdirSync(exportRoot, { recursive: true });
+
+  const manifest = {
+    schemaVersion: 1,
+    host,
+    skillRoot: hostConfig.appExport.skillRoot,
+    rootBundle: {
+      name: 'gstack',
+      path: `${hostConfig.appExport.skillRoot}/gstack/SKILL.md`,
+      metadataPath: `${hostConfig.appExport.skillRoot}/gstack/agents/openai.yaml`,
+    },
+    runtime: {
+      globalRoot: hostConfig.globalRoot,
+      localSkillRoot: hostConfig.localSkillRoot,
+      usesEnvVars: hostConfig.usesEnvVars,
+      runtimeRoot: hostConfig.runtimeRoot,
+      sidecar: hostConfig.sidecar ?? null,
+    },
+    skills: [...skills].sort((a, b) => a.name.localeCompare(b.name)),
+  };
+
+  fs.writeFileSync(
+    path.join(exportRoot, hostConfig.appExport.manifestFile),
+    JSON.stringify(manifest, null, 2) + '\n',
+  );
+}
+
 /**
  * Transform frontmatter for external hosts.
  * Claude: strips `sensitive:` field (only Factory uses it).
@@ -238,12 +313,9 @@ function transformFrontmatter(content: string, host: Host): string {
   }
 
   // Allowlist mode: reconstruct frontmatter with only allowed fields
-  const fmStart = content.indexOf('---\n');
-  if (fmStart !== 0) return content;
-  const fmEnd = content.indexOf('\n---', fmStart + 4);
-  if (fmEnd === -1) return content;
-  const frontmatter = content.slice(fmStart + 4, fmEnd);
-  const body = content.slice(fmEnd + 4);
+  const parsed = parseFrontmatter(content);
+  if (!parsed) return content;
+  const { frontmatter, body } = parsed;
   const { name, description } = extractNameAndDescription(content);
 
   // Description limit enforcement
@@ -518,6 +590,7 @@ for (const currentHost of hostsToRun) {
   try {
     let hasChanges = false;
     const tokenBudget: Array<{ skill: string; lines: number; tokens: number }> = [];
+    const appExportSkills: AppExportSkill[] = [];
 
     const currentHostConfig = getHostConfig(currentHost);
     for (const tmplPath of findTemplates()) {
@@ -559,6 +632,23 @@ for (const currentHost of hostsToRun) {
       const TOKEN_CEILING_BYTES = 100_000;
       if (content.length > TOKEN_CEILING_BYTES) {
         console.warn(`⚠️  TOKEN CEILING: ${relOutput} is ${content.length} bytes (~${tokens} tokens), exceeds ${TOKEN_CEILING_BYTES} byte ceiling (~25K tokens)`);
+      }
+
+      if (currentHostConfig.appExport && !symlinkLoop) {
+        const skillName = path.basename(path.dirname(outputPath));
+        const generatedDescription = extractNameAndDescription(content).description;
+        const metadataContent = currentHostConfig.generation.generateMetadata
+          ? generateOpenAIYaml(skillName, condenseOpenAIShortDescription(generatedDescription))
+          : null;
+        const appExportSkill = writeAppExportSkill(currentHost, skillName, content, metadataContent);
+        if (appExportSkill) appExportSkills.push(appExportSkill);
+      }
+    }
+
+    if (currentHostConfig.appExport) {
+      writeAppExportManifest(currentHost, appExportSkills);
+      if (!DRY_RUN) {
+        console.log(`GENERATED: ${currentHostConfig.appExport.root}/${currentHostConfig.appExport.manifestFile}`);
       }
     }
 

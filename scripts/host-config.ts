@@ -66,6 +66,16 @@ export interface HostConfig {
     includeSkills?: string[];
   };
 
+  /** Optional app-facing export layout for hosts that need packaged artifacts. */
+  appExport?: {
+    /** Generated export root relative to repo root. */
+    root: string;
+    /** Skill directory under the export root. */
+    skillRoot: string;
+    /** Manifest filename under the export root. */
+    manifestFile: string;
+  };
+
   // --- Content Rewrites ---
   /** Literal string replacements on generated SKILL.md content. Order matters, replaceAll. */
   pathRewrites: Array<{ from: string; to: string }>;

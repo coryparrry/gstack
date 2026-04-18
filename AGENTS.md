@@ -47,3 +47,24 @@ bun run skill:check      # health dashboard for all skills
 - Run `bun run gen:skill-docs --host codex` to regenerate Codex-specific output.
 - The browse binary provides headless browser access. Use `$B <command>` in skills.
 - Safety skills (careful, freeze, guard) use inline advisory prose — always confirm before destructive operations.
+
+## Codex Port Workstream
+
+- This repo is being used to port gstack so it works in the Codex app with the same user-facing functionality as the CLI version.
+- Project definition: preserve gstack's full user-facing behavior and cross-skill workflow exactly as experienced by the end user, while adapting only the underlying backend, tooling, and host integration needed to make it work reliably in the Codex app.
+- Preserve behavior and cross-skill workflows. Change backend/tooling integration only when needed for Codex app compatibility.
+- Be conscious of context-window usage. When reading long documents, large generated skills, or doing review-heavy analysis across many files, prefer subagents so the main thread stays compact.
+
+- For this workstream, subagents should always use `gpt-5.4-mini`.
+Use subagents for non-trivial work that benefits from parallelism, context isolation, or independent verification. Prefer them when the task has multiple independent questions, needs read-only repo exploration, would benefit from a separate review or validation pass, or would otherwise flood the main agent’s context with noisy intermediate output.
+
+Keep the main agent on the critical path. It should own user communication, final decisions, synthesis, and any immediate blocking step. Delegate bounded sidecar tasks with clear deliverables and stop conditions.
+
+Default role split:
+
+Explore scout: read-only codebase digging and source-of-truth discovery.
+Planner: decomposition only for large or ambiguous tasks.
+Reviewer: correctness, architecture drift, security smell, and test-gap review.
+Validator: focused lint, test, build, or browser verification.
+Handoff summariser: compresses subagent output into a compact parent-ready summary.
+Do not use subagents for trivial single-file work, tasks that are faster to do than explain, or urgent blocking work the main agent can complete directly. Prefer several small, well-scoped subagents over one vague general-purpose delegate.

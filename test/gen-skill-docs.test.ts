@@ -1475,6 +1475,7 @@ describe('DESIGN_REVIEW_LITE extended with Codex', () => {
 
 describe('Codex generation (--host codex)', () => {
   const AGENTS_DIR = path.join(ROOT, '.agents', 'skills');
+  const CODEX_APP_DIR = path.join(ROOT, '.codex-app');
 
   // .agents/ is gitignored (v0.11.2.0) — generate on demand for tests
   Bun.spawnSync(['bun', 'run', 'scripts/gen-skill-docs.ts', '--host', 'codex'], {
@@ -1511,6 +1512,13 @@ describe('Codex generation (--host codex)', () => {
   test('--host codex generates correct output paths', () => {
     for (const skill of CODEX_SKILLS) {
       const skillMd = path.join(AGENTS_DIR, skill.codexName, 'SKILL.md');
+      expect(fs.existsSync(skillMd)).toBe(true);
+    }
+  });
+
+  test('--host codex generates app export skill paths', () => {
+    for (const skill of CODEX_SKILLS) {
+      const skillMd = path.join(CODEX_APP_DIR, 'skills', skill.codexName, 'SKILL.md');
       expect(fs.existsSync(skillMd)).toBe(true);
     }
   });
@@ -1564,6 +1572,57 @@ describe('Codex generation (--host codex)', () => {
     }
   });
 
+  test('all Codex app export skills have agents/openai.yaml metadata', () => {
+    for (const skill of CODEX_SKILLS) {
+      const metadata = path.join(CODEX_APP_DIR, 'skills', skill.codexName, 'agents', 'openai.yaml');
+      expect(fs.existsSync(metadata)).toBe(true);
+      const content = fs.readFileSync(metadata, 'utf-8');
+      expect(content).toContain(`display_name: "${skill.codexName}"`);
+      expect(content).toContain('short_description:');
+      expect(content).toContain('allow_implicit_invocation: true');
+    }
+  });
+
+  test('Codex skill frontmatter stays allowlisted in both export trees', () => {
+    const extractFrontmatter = (content: string): string => {
+      const match = content.match(/^---\n([\s\S]*?)\n---/);
+      expect(match).not.toBeNull();
+      return match![1];
+    };
+
+    const agentsSkill = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-ship', 'SKILL.md'), 'utf-8');
+    const appSkill = fs.readFileSync(path.join(CODEX_APP_DIR, 'skills', 'gstack-ship', 'SKILL.md'), 'utf-8');
+
+    for (const frontmatter of [extractFrontmatter(agentsSkill), extractFrontmatter(appSkill)]) {
+      expect(frontmatter).toContain('name: ship');
+      expect(frontmatter).toContain('description: |');
+      expect(frontmatter).not.toContain('preamble-tier:');
+      expect(frontmatter).not.toContain('version:');
+      expect(frontmatter).not.toContain('allowed-tools:');
+      expect(frontmatter).not.toContain('sensitive:');
+      expect(frontmatter).not.toContain('triggers:');
+    }
+  });
+
+  test('Codex app export manifest describes bundled skills and runtime assets', () => {
+    const manifestPath = path.join(CODEX_APP_DIR, 'manifest.json');
+    expect(fs.existsSync(manifestPath)).toBe(true);
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    expect(manifest.schemaVersion).toBe(1);
+    expect(manifest.host).toBe('codex');
+    expect(manifest.skillRoot).toBe('skills');
+    expect(manifest.rootBundle.name).toBe('gstack');
+    expect(manifest.rootBundle.path).toBe('skills/gstack/SKILL.md');
+    expect(manifest.runtime.globalRoot).toBe('.codex/skills/gstack');
+    expect(manifest.runtime.localSkillRoot).toBe('.agents/skills/gstack');
+    expect(manifest.runtime.sidecar.path).toBe('.agents/skills/gstack');
+    expect(manifest.runtime.runtimeRoot.globalSymlinks).toContain('bin');
+    expect(manifest.runtime.runtimeRoot.globalSymlinks).toContain('ETHOS.md');
+    const exportedSkillNames = manifest.skills.map((skill: { name: string }) => skill.name).sort();
+    const expectedSkillNames = CODEX_SKILLS.map(skill => skill.codexName).sort();
+    expect(exportedSkillNames).toEqual(expectedSkillNames);
+  });
+
   test('no .claude/skills/ in Codex output', () => {
     for (const skill of CODEX_SKILLS) {
       const content = fs.readFileSync(path.join(AGENTS_DIR, skill.codexName, 'SKILL.md'), 'utf-8');
@@ -1600,7 +1659,7 @@ describe('Codex generation (--host codex)', () => {
       stderr: 'pipe',
     });
     expect(result.exitCode).toBe(0);
-    const output = result.stdout.toString();
+    const output = result.stdout.toString().replaceAll('\\', '/');
     // Every Codex skill should be FRESH
     for (const skill of CODEX_SKILLS) {
       expect(output).toContain(`FRESH: .agents/skills/${skill.codexName}/SKILL.md`);

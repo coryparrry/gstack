@@ -24,6 +24,12 @@ const codex: HostConfig = {
     skipSkills: ['codex'],  // Codex skill is a Claude wrapper around codex exec
   },
 
+  appExport: {
+    root: '.codex-app',
+    skillRoot: 'skills',
+    manifestFile: 'manifest.json',
+  },
+
   pathRewrites: [
     { from: '~/.claude/skills/gstack', to: '$GSTACK_ROOT' },
     { from: '.claude/skills/gstack', to: '.agents/skills/gstack' },

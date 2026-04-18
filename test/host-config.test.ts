@@ -459,6 +459,13 @@ describe('host config correctness', () => {
     expect(codex.sidecar!.path).toBe('.agents/skills/gstack');
   });
 
+  test('codex has app export config', () => {
+    expect(codex.appExport).toBeDefined();
+    expect(codex.appExport!.root).toBe('.codex-app');
+    expect(codex.appExport!.skillRoot).toBe('skills');
+    expect(codex.appExport!.manifestFile).toBe('manifest.json');
+  });
+
   test('factory has tool rewrites', () => {
     expect(factory.toolRewrites).toBeDefined();
     expect(Object.keys(factory.toolRewrites!).length).toBeGreaterThan(0);
