@@ -102,6 +102,17 @@ describe('setup --host codex', () => {
         manifest.skills.map((skill: { name: string }) => skill.name).sort()
       );
 
+      for (const skill of manifest.skills as Array<{ name: string; metadataPath: string }>) {
+        const installedMetadataPath = path.join(codexHome, 'skills', skill.name, 'agents', 'openai.yaml');
+        const exportedMetadataPath = path.join(
+          ROOT,
+          '.codex-app',
+          skill.name === 'gstack' ? manifest.runtimeBundle.metadataPath : skill.metadataPath
+        );
+        expect(readShellRealPath(installedMetadataPath)).toBe(toShellPath(exportedMetadataPath));
+        expect(fs.readFileSync(exportedMetadataPath, 'utf-8').trim().length).toBeGreaterThan(0);
+      }
+
       const installedRoot = path.join(codexHome, 'skills', 'gstack');
       const exportedRootDir = path.join(ROOT, '.codex-app', 'runtime', 'gstack');
       expect(
