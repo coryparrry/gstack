@@ -1838,50 +1838,46 @@ describe('Codex generation (--host codex)', () => {
 
   // ─── Path rewriting regression tests ─────────────────────────
 
-  test('sidecar paths point to .agents/skills/gstack/review/ (not gstack-review/)', () => {
-    // Regression: gen-skill-docs rewrote .claude/skills/review → .agents/skills/gstack-review
-    // but setup puts sidecars under .agents/skills/gstack/review/. Must match setup layout.
+  test('review helper paths in Codex point at the runtime bundle', () => {
     const content = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-review', 'SKILL.md'), 'utf-8');
-    // Correct: references to sidecar files use gstack/review/ path
-    expect(content).toContain('.agents/skills/gstack/review/checklist.md');
-    // design-checklist.md is now referenced via Review Army specialist (Claude only, stripped for Codex)
-    // Wrong: must NOT reference gstack-review/checklist.md (file doesn't exist there)
-    expect(content).not.toContain('.agents/skills/gstack-review/checklist.md');
+    expect(content).toContain('$GSTACK_ROOT/review/checklist.md');
+    expect(content).toContain('$GSTACK_ROOT/review/greptile-triage.md');
+    expect(content).not.toContain('.agents/skills/gstack/review/checklist.md');
+    expect(content).not.toContain('.agents/skills/gstack/review/greptile-triage.md');
   });
 
-  test('sidecar paths in ship skill point to gstack/review/ for pre-landing review', () => {
+  test('ship skill reads review helpers from the runtime bundle and linked skills from the skill root', () => {
     const content = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-ship', 'SKILL.md'), 'utf-8');
-    // Ship references the review checklist in its pre-landing review step
-    if (content.includes('checklist.md')) {
-      expect(content).toContain('.agents/skills/gstack/review/');
-      expect(content).not.toContain('.agents/skills/gstack-review/checklist');
-    }
-  });
-
-  test('greptile-triage sidecar path is correct', () => {
-    const content = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-review', 'SKILL.md'), 'utf-8');
-    if (content.includes('greptile-triage')) {
-      expect(content).toContain('.agents/skills/gstack/review/greptile-triage.md');
-      expect(content).not.toContain('.agents/skills/gstack-review/greptile-triage');
-    }
+    expect(content).toContain('$GSTACK_ROOT/review/checklist.md');
+    expect(content).toContain('$GSTACK_ROOT/review/design-checklist.md');
+    expect(content).toContain('$GSTACK_ROOT/review/greptile-triage.md');
+    expect(content).toContain('$GSTACK_ROOT/review/TODOS-format.md');
+    expect(content).toContain('$GSTACK_SKILLS_ROOT/gstack-document-release/SKILL.md');
+    expect(content).not.toContain('.agents/skills/gstack/review/');
+    expect(content).not.toContain('${HOME}/.agents/skills/gstack/document-release/SKILL.md');
   });
 
   test('all four path rewrite rules produce correct output', () => {
-    // Test each of the 4 path rewrite rules individually
-    const content = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-review', 'SKILL.md'), 'utf-8');
+    const reviewContent = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-review', 'SKILL.md'), 'utf-8');
+    const shipContent = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-ship', 'SKILL.md'), 'utf-8');
 
     // Rule 1: ~/.claude/skills/gstack → $GSTACK_ROOT
-    expect(content).not.toContain('~/.claude/skills/gstack');
-    expect(content).toContain('$GSTACK_ROOT');
+    expect(reviewContent).not.toContain('~/.claude/skills/gstack');
+    expect(reviewContent).toContain('$GSTACK_ROOT');
 
     // Rule 2: .claude/skills/gstack → .agents/skills/gstack
-    expect(content).not.toContain('.claude/skills/gstack');
+    expect(reviewContent).not.toContain('.claude/skills/gstack');
 
-    // Rule 3: .claude/skills/review → .agents/skills/gstack/review
-    expect(content).not.toContain('.claude/skills/review');
+    // Rule 3: .claude/skills/review → $GSTACK_ROOT/review
+    expect(reviewContent).not.toContain('.claude/skills/review');
+    expect(reviewContent).toContain('$GSTACK_ROOT/review/');
 
     // Rule 4: .claude/skills → .agents/skills (catch-all)
-    expect(content).not.toContain('.claude/skills');
+    expect(shipContent).not.toContain('.claude/skills');
+
+    // Rule 5: ${HOME}/.claude/skills/gstack/document-release/SKILL.md → $GSTACK_SKILLS_ROOT/gstack-document-release/SKILL.md
+    expect(shipContent).toContain('$GSTACK_SKILLS_ROOT/gstack-document-release/SKILL.md');
+    expect(shipContent).not.toContain('${HOME}/.claude/skills/gstack/document-release/SKILL.md');
   });
 
   test('path rewrite rules apply to all Codex skills with sidecar references', () => {
