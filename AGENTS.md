@@ -53,6 +53,11 @@ bun run skill:check      # health dashboard for all skills
 - This repo is being used to port gstack so it works in the Codex app with the same user-facing functionality as the CLI version.
 - Project definition: preserve gstack's full user-facing behavior and cross-skill workflow exactly as experienced by the end user, while adapting only the underlying backend, tooling, and host integration needed to make it work reliably in the Codex app.
 - Preserve behavior and cross-skill workflows. Change backend/tooling integration only when needed for Codex app compatibility.
+- The target is the Codex app, not the standalone Codex CLI. Do not let CLI-oriented validation, harness work, or convenience tooling become the plan or the product.
+- Use Codex CLI paths only when they directly validate or unblock Codex app behavior, packaging, discovery, install, or runtime compatibility. Treat the CLI as a narrow support tool, not the delivery surface.
+- If a task starts drifting into generic Codex CLI infrastructure, stop and re-anchor on the Codex app/plugin artifact, host integration, and end-user workflow parity.
+- Prefer work that moves the actual Codex app/plugin deliverable forward: artifact shape, app discovery/install contract, runtime asset exposure, routing, browser integration, and learnings/memory parity as experienced in the app.
+- Do not expand generic E2E/test harness scope unless it is required to prove Codex app compatibility for a specific blocked surface.
 - Be conscious of context-window usage. When reading long documents, large generated skills, or doing review-heavy analysis across many files, prefer subagents so the main thread stays compact.
 
 ## Subagent Use
