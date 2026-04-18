@@ -18,6 +18,7 @@ import { generateQuestionTuning } from './question-tuning';
 
 function generatePreambleBash(ctx: TemplateContext): string {
   const hostConfig = getHostConfig(ctx.host);
+  const routingDoc = ctx.host === 'codex' ? 'AGENTS.md' : 'CLAUDE.md';
   const runtimeRoot = hostConfig.usesEnvVars
     ? `_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 GSTACK_ROOT="$HOME/${hostConfig.globalRoot}"
@@ -94,9 +95,9 @@ else
 fi
 # Session timeline: record skill start (local-only, never sent anywhere)
 ${ctx.paths.binDir}/gstack-timeline-log '{"skill":"${ctx.skillName}","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
-# Check if CLAUDE.md has routing rules
+# Check if ${routingDoc} has routing rules
 _HAS_ROUTING="no"
-if [ -f CLAUDE.md ] && grep -q "## Skill routing" CLAUDE.md 2>/dev/null; then
+if [ -f ${routingDoc} ] && grep -q "## Skill routing" ${routingDoc} 2>/dev/null; then
   _HAS_ROUTING="yes"
 fi
 _ROUTING_DECLINED=$(${ctx.paths.binDir}/gstack-config get routing_declined 2>/dev/null || echo "false")
@@ -239,20 +240,23 @@ This only happens once. If \`PROACTIVE_PROMPTED\` is \`yes\`, skip this entirely
 }
 
 function generateRoutingInjection(ctx: TemplateContext): string {
+  const routingDoc = ctx.host === 'codex' ? 'AGENTS.md' : 'CLAUDE.md';
+  const hostLabel = ctx.host === 'codex' ? 'Codex' : 'Claude';
+
   return `If \`HAS_ROUTING\` is \`no\` AND \`ROUTING_DECLINED\` is \`false\` AND \`PROACTIVE_PROMPTED\` is \`yes\`:
-Check if a CLAUDE.md file exists in the project root. If it does not exist, create it.
+Check if a ${routingDoc} file exists in the project root. If it does not exist, create it.
 
 Use AskUserQuestion:
 
-> gstack works best when your project's CLAUDE.md includes skill routing rules.
-> This tells Claude to use specialized workflows (like /ship, /investigate, /qa)
+> gstack works best when your project's ${routingDoc} includes skill routing rules.
+> This tells ${hostLabel} to use specialized workflows (like /ship, /investigate, /qa)
 > instead of answering directly. It's a one-time addition, about 15 lines.
 
 Options:
-- A) Add routing rules to CLAUDE.md (recommended)
+- A) Add routing rules to ${routingDoc} (recommended)
 - B) No thanks, I'll invoke skills manually
 
-If A: Append this section to the end of CLAUDE.md:
+If A: Append this section to the end of ${routingDoc}:
 
 \`\`\`markdown
 
@@ -277,7 +281,7 @@ Key routing rules:
 - Code quality, health check → invoke health
 \`\`\`
 
-Then commit the change: \`git add CLAUDE.md && git commit -m "chore: add gstack skill routing rules to CLAUDE.md"\`
+Then commit the change: \`git add ${routingDoc} && git commit -m "chore: add gstack skill routing rules to ${routingDoc}"\`
 
 If B: run \`${ctx.paths.binDir}/gstack-config set routing_declined true\`
 Say "No problem. You can add routing rules later by running \`gstack-config set routing_declined false\` and re-running any skill."

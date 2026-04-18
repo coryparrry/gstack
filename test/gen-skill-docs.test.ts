@@ -1359,6 +1359,12 @@ describe('preamble routing injection', () => {
     expect(shipContent).toContain('invoke ship');
     expect(shipContent).toContain('invoke qa');
   });
+
+  test('Claude host routing injection stays CLAUDE.md-specific', () => {
+    expect(shipContent).toContain('your project\'s CLAUDE.md includes skill routing rules');
+    expect(shipContent).toContain('Add routing rules to CLAUDE.md');
+    expect(shipContent).toContain('git add CLAUDE.md && git commit -m "chore: add gstack skill routing rules to CLAUDE.md"');
+  });
 });
 
 // --- {{DESIGN_OUTSIDE_VOICES}} resolver tests ---
@@ -1653,6 +1659,12 @@ describe('Codex generation (--host codex)', () => {
     expect(fs.existsSync(path.join(runtimeRoot, 'ETHOS.md'))).toBe(true);
   });
 
+  test('codex:export normalizes runtime shell scripts to LF', () => {
+    const runtimeSlug = fs.readFileSync(path.join(CODEX_APP_DIR, 'runtime', 'gstack', 'bin', 'gstack-slug'), 'utf-8');
+    expect(runtimeSlug).not.toContain('\r\n');
+    expect(runtimeSlug.startsWith('#!/usr/bin/env bash')).toBe(true);
+  });
+
   test('no .claude/skills/ in Codex output', () => {
     for (const skill of CODEX_SKILLS) {
       const content = fs.readFileSync(path.join(AGENTS_DIR, skill.codexName, 'SKILL.md'), 'utf-8');
@@ -1684,6 +1696,23 @@ describe('Codex generation (--host codex)', () => {
       expect(content).toContain('$GSTACK_ROOT/bin/gstack-learnings-log');
       expect(content).not.toContain('~/.claude/skills/gstack/bin/');
       expect(content).not.toContain('.claude/skills/gstack/bin/');
+    }
+  });
+
+  test('Codex routing injection targets AGENTS.md instead of CLAUDE.md', () => {
+    const paths = [
+      path.join(AGENTS_DIR, 'gstack-ship', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack-ship', 'SKILL.md'),
+    ];
+
+    for (const skillPath of paths) {
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toContain('grep -q "## Skill routing" AGENTS.md');
+      expect(content).toContain('your project\'s AGENTS.md includes skill routing rules');
+      expect(content).toContain('This tells Codex to use specialized workflows');
+      expect(content).toContain('Add routing rules to AGENTS.md');
+      expect(content).toContain('git add AGENTS.md && git commit -m "chore: add gstack skill routing rules to AGENTS.md"');
+      expect(content).not.toContain('Add routing rules to CLAUDE.md');
     }
   });
 

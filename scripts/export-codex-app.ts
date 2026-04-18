@@ -88,6 +88,35 @@ function copyExportEntry(fromExportPath: string, toRuntimePath: string): void {
   fs.cpSync(source, toRuntimePath, { recursive: true, force: true });
 }
 
+function shouldNormalizeShellScript(filePath: string, content: string): boolean {
+  const base = path.basename(filePath);
+  if (base.endsWith('.sh')) return true;
+  return content.startsWith('#!/usr/bin/env bash')
+    || content.startsWith('#!/bin/bash')
+    || content.startsWith('#!/usr/bin/env sh')
+    || content.startsWith('#!/bin/sh');
+}
+
+function normalizeRuntimeShellScripts(rootPath: string): void {
+  const stack = [rootPath];
+
+  while (stack.length > 0) {
+    const currentPath = stack.pop()!;
+    for (const entry of fs.readdirSync(currentPath, { withFileTypes: true })) {
+      const nextPath = path.join(currentPath, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(nextPath);
+        continue;
+      }
+
+      const content = fs.readFileSync(nextPath, 'utf-8');
+      if (!content.includes('\r\n')) continue;
+      if (!shouldNormalizeShellScript(nextPath, content)) continue;
+      fs.writeFileSync(nextPath, content.replace(/\r\n/g, '\n'));
+    }
+  }
+}
+
 ensureExists(skillRoot, 'Codex app skill export');
 ensureExists(manifestPath, 'Codex app manifest');
 ensureCodexRuntimeBuilt();
@@ -112,6 +141,8 @@ if (hostConfig.runtimeRoot.globalFiles) {
     }
   }
 }
+
+normalizeRuntimeShellScripts(runtimeRoot);
 
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
 for (const asset of manifest.runtimeBundle?.assets || []) {
