@@ -58,7 +58,7 @@ describe('hosts/index.ts', () => {
   test('getHostConfig returns correct config', () => {
     const c = getHostConfig('codex');
     expect(c.name).toBe('codex');
-    expect(c.displayName).toBe('OpenAI Codex CLI');
+    expect(c.displayName).toBe('OpenAI Codex App');
   });
 
   test('getHostConfig throws on unknown host', () => {
@@ -245,13 +245,15 @@ describe('validateAllConfigs', () => {
 describe('HOST_PATHS derivation from configs', () => {
   test('Claude uses literal home paths (no env vars)', () => {
     expect(HOST_PATHS.claude.skillRoot).toBe('~/.claude/skills/gstack');
+    expect(HOST_PATHS.claude.runtimeRoot).toBe('~/.claude/skills/gstack');
     expect(HOST_PATHS.claude.binDir).toBe('~/.claude/skills/gstack/bin');
     expect(HOST_PATHS.claude.browseDir).toBe('~/.claude/skills/gstack/browse/dist');
     expect(HOST_PATHS.claude.designDir).toBe('~/.claude/skills/gstack/design/dist');
   });
 
-  test('Codex uses $GSTACK_ROOT env vars', () => {
-    expect(HOST_PATHS.codex.skillRoot).toBe('$GSTACK_ROOT');
+  test('Codex splits runtime and skill collection env vars', () => {
+    expect(HOST_PATHS.codex.skillRoot).toBe('$GSTACK_SKILLS_ROOT');
+    expect(HOST_PATHS.codex.runtimeRoot).toBe('$GSTACK_ROOT');
     expect(HOST_PATHS.codex.binDir).toBe('$GSTACK_BIN');
     expect(HOST_PATHS.codex.browseDir).toBe('$GSTACK_BROWSE');
     expect(HOST_PATHS.codex.designDir).toBe('$GSTACK_DESIGN');
@@ -260,7 +262,7 @@ describe('HOST_PATHS derivation from configs', () => {
   test('every host with usesEnvVars=true gets env var paths', () => {
     for (const config of ALL_HOST_CONFIGS) {
       if (config.usesEnvVars) {
-        expect(HOST_PATHS[config.name].skillRoot).toBe('$GSTACK_ROOT');
+        expect(HOST_PATHS[config.name].runtimeRoot).toBe('$GSTACK_ROOT');
         expect(HOST_PATHS[config.name].binDir).toBe('$GSTACK_BIN');
       }
     }

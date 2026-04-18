@@ -20,9 +20,33 @@ function generatePreambleBash(ctx: TemplateContext): string {
   const hostConfig = getHostConfig(ctx.host);
   const routingDoc = ctx.host === 'codex' ? 'AGENTS.md' : 'CLAUDE.md';
   const runtimeRoot = hostConfig.usesEnvVars
-    ? `_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+    ? ctx.host === 'codex'
+      ? `_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+GSTACK_ROOT="\${GSTACK_ROOT:-}"
+GSTACK_SKILLS_ROOT="\${GSTACK_SKILLS_ROOT:-}"
+if [ -n "$_ROOT" ] && [ -d "$_ROOT/${ctx.paths.localSkillRoot}" ]; then
+  GSTACK_ROOT="$_ROOT/${ctx.paths.localSkillRoot}"
+  GSTACK_SKILLS_ROOT="$_ROOT/.agents/skills"
+fi
+if [ -z "$GSTACK_ROOT" ] || [ -z "$GSTACK_SKILLS_ROOT" ]; then
+  for _GSTACK_PLUGIN_ROOT in "$HOME"/.codex/plugins/cache/*/gstack/* "$HOME"/.codex/plugins/cache/*/gstack; do
+    if [ -d "$_GSTACK_PLUGIN_ROOT/runtime/gstack" ] && [ -d "$_GSTACK_PLUGIN_ROOT/skills" ]; then
+      [ -z "$GSTACK_ROOT" ] && GSTACK_ROOT="$_GSTACK_PLUGIN_ROOT/runtime/gstack"
+      [ -z "$GSTACK_SKILLS_ROOT" ] && GSTACK_SKILLS_ROOT="$_GSTACK_PLUGIN_ROOT/skills"
+      break
+    fi
+  done
+fi
+[ -z "$GSTACK_ROOT" ] && GSTACK_ROOT="$HOME/${hostConfig.globalRoot}"
+[ -z "$GSTACK_SKILLS_ROOT" ] && GSTACK_SKILLS_ROOT="$HOME/.codex/skills"
+GSTACK_BIN="$GSTACK_ROOT/bin"
+GSTACK_BROWSE="$GSTACK_ROOT/browse/dist"
+GSTACK_DESIGN="$GSTACK_ROOT/design/dist"
+`
+      : `_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 GSTACK_ROOT="$HOME/${hostConfig.globalRoot}"
 [ -n "$_ROOT" ] && [ -d "$_ROOT/${ctx.paths.localSkillRoot}" ] && GSTACK_ROOT="$_ROOT/${ctx.paths.localSkillRoot}"
+GSTACK_SKILLS_ROOT="$GSTACK_ROOT"
 GSTACK_BIN="$GSTACK_ROOT/bin"
 GSTACK_BROWSE="$GSTACK_ROOT/browse/dist"
 GSTACK_DESIGN="$GSTACK_ROOT/design/dist"
@@ -139,7 +163,7 @@ or invoking other gstack skills, use the \`/gstack-\` prefix (e.g., \`/gstack-qa
 of \`/qa\`, \`/gstack-ship\` instead of \`/ship\`). Disk paths are unaffected — always use
 \`${ctx.paths.skillRoot}/[skill-name]/SKILL.md\` for reading skill files.
 
-If output shows \`UPGRADE_AVAILABLE <old> <new>\`: read \`${ctx.paths.skillRoot}/gstack-upgrade/SKILL.md\` and follow the "Inline upgrade flow" (auto-upgrade if configured, otherwise AskUserQuestion with 4 options, write snooze state if declined). If \`JUST_UPGRADED <from> <to>\`: tell user "Running gstack v{to} (just updated!)" and continue.`;
+If output shows \`UPGRADE_AVAILABLE <old> <new>\`: read \`${ctx.paths.runtimeRoot}/gstack-upgrade/SKILL.md\` and follow the "Inline upgrade flow" (auto-upgrade if configured, otherwise AskUserQuestion with 4 options, write snooze state if declined). If \`JUST_UPGRADED <from> <to>\`: tell user "Running gstack v{to} (just updated!)" and continue.`;
 }
 
 function generateWritingStyleMigration(ctx: TemplateContext): string {
@@ -540,7 +564,7 @@ This does NOT apply to routine coding, small features, or obvious changes.`;
 function generateSearchBeforeBuildingSection(ctx: TemplateContext): string {
   return `## Search Before Building
 
-Before building anything unfamiliar, **search first.** See \`${ctx.paths.skillRoot}/ETHOS.md\`.
+Before building anything unfamiliar, **search first.** See \`${ctx.paths.runtimeRoot}/ETHOS.md\`.
 - **Layer 1** (tried and true) — don't reinvent. **Layer 2** (new and popular) — scrutinize. **Layer 3** (first principles) — prize above all.
 
 **Eureka:** When first-principles reasoning contradicts conventional wisdom, name it and log:

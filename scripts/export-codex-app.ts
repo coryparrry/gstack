@@ -121,7 +121,6 @@ ensureExists(skillRoot, 'Codex app skill export');
 ensureExists(manifestPath, 'Codex app manifest');
 ensureCodexRuntimeBuilt();
 
-fs.rmSync(runtimeRoot, { recursive: true, force: true });
 fs.mkdirSync(runtimeRoot, { recursive: true });
 
 copyExportEntry(path.join(hostConfig.appExport.skillRoot, 'gstack', 'SKILL.md'), path.join(runtimeRoot, 'SKILL.md'));

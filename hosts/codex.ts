@@ -2,7 +2,7 @@ import type { HostConfig } from '../scripts/host-config';
 
 const codex: HostConfig = {
   name: 'codex',
-  displayName: 'OpenAI Codex CLI',
+  displayName: 'OpenAI Codex App',
   cliCommand: 'codex',
   cliAliases: ['agents'],
 

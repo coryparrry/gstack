@@ -275,7 +275,10 @@ function writeAppExportSkill(
     }
   } else {
     fs.mkdirSync(skillDir, { recursive: true });
-    fs.writeFileSync(skillPath, content);
+    const existingSkill = fs.existsSync(skillPath) ? fs.readFileSync(skillPath, 'utf-8') : null;
+    if (existingSkill !== content) {
+      fs.writeFileSync(skillPath, content);
+    }
   }
 
   if (metadataContent) {
@@ -291,7 +294,10 @@ function writeAppExportSkill(
     } else {
       const agentsDir = path.join(skillDir, 'agents');
       fs.mkdirSync(agentsDir, { recursive: true });
-      fs.writeFileSync(metadataPath, metadataContent);
+      const existingMetadata = fs.existsSync(metadataPath) ? fs.readFileSync(metadataPath, 'utf-8') : null;
+      if (existingMetadata !== metadataContent) {
+        fs.writeFileSync(metadataPath, metadataContent);
+      }
     }
   }
 
@@ -351,7 +357,10 @@ function writeAppExportManifest(host: Host, skills: AppExportSkill[]): boolean {
   }
 
   fs.mkdirSync(exportRoot, { recursive: true });
-  fs.writeFileSync(manifestPath, manifestContent);
+  const existingManifest = fs.existsSync(manifestPath) ? fs.readFileSync(manifestPath, 'utf-8') : null;
+  if (existingManifest !== manifestContent) {
+    fs.writeFileSync(manifestPath, manifestContent);
+  }
   return false;
 }
 
