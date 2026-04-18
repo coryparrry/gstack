@@ -70,6 +70,31 @@ function collectRuntimeBundleAssets(runtimeRoot: string, declaredAssets: string[
   return [...collected].sort();
 }
 
+function collectNamedFiles(rootPath: string, fileName: string): string[] {
+  const matches: string[] = [];
+
+  function visit(currentPath: string, relativePath = ''): void {
+    const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const nextRelative = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+      const nextPath = path.join(currentPath, entry.name);
+
+      if (entry.isDirectory()) {
+        visit(nextPath, nextRelative);
+        continue;
+      }
+
+      if (entry.name === fileName) {
+        matches.push(nextRelative);
+      }
+    }
+  }
+
+  visit(rootPath);
+  return matches.sort();
+}
+
 describe('setup --host codex', () => {
   test('installs Codex runtime and skills from the .codex-app bundle', () => {
     const tempHome = mkTmpHome();
@@ -120,6 +145,12 @@ describe('setup --host codex', () => {
       ).toEqual(
         [...manifest.runtimeBundle.assets].sort()
       );
+      expect(
+        collectNamedFiles(exportedRootDir, 'openai.yaml')
+      ).toEqual(['agents/openai.yaml']);
+      expect(
+        collectNamedFiles(exportedRootDir, 'SKILL.md')
+      ).toEqual(['SKILL.md', 'gstack-upgrade/SKILL.md']);
       expect(readShellRealPath(installedRoot)).toBe(toShellPath(exportedRootDir));
 
       const installedReviewDir = path.join(codexHome, 'skills', 'gstack-review');
