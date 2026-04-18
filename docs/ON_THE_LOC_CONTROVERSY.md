@@ -4,7 +4,7 @@ Or: what happened when I mentioned how many lines of code I've been shipping, an
 
 ## The critique is right. And it doesn't matter.
 
-LOC is a garbage metric. Every senior engineer knows it. Dijkstra said it in 1988. Kernighan implied it before that. If you measure programmer productivity in lines of code, you're measuring the wrong thing. This has been true for 40 years and it's still true.
+LOC is a garbage metric. Every senior engineer knows it. Dijkstra wrote in 1988 that lines of code shouldn't be counted as "lines produced" but as "lines spent" ([*On the cruelty of really teaching computing science*, EWD1036](https://www.cs.utexas.edu/~EWD/transcriptions/EWD10xx/EWD1036.html)). Bill Gates put it more memorably: measuring programming progress by LOC is like measuring aircraft building progress by weight. If you measure programmer productivity in lines of code, you're measuring the wrong thing. This has been true for 40 years and it's still true.
 
 I posted that in the last 60 days I'd shipped 600,000 lines of production code. The replies came in fast:
 
@@ -107,7 +107,7 @@ The real insight: testing at multiple levels is what makes AI-assisted coding ac
 
 gstack's core real-code feature — the thing that isn't just markdown prompts — is a **Playwright-based CLI browser** I wrote specifically so I could stop manually black-box testing my stuff. `/qa` opens a real browser, navigates your staging URL, and runs automated checks. That's 2,000+ lines of real systems code (server, CDP inspector, snapshot engine, content security, cookie management) that exists because testing is the unlock, not the overhead.
 
-**Slop scan.** A third party — [Ben Vinegar](https://x.com/bentlegen), founding engineer at Sentry — built a tool called [slop-scan](https://github.com/benvinegar/slop-scan) specifically to measure AI code patterns. Deterministic rules, calibrated against mature OSS baselines. He ran it on gstack and scored us 5.24 (highest on his benchmark). I took the findings seriously, refactored, and cut the score by 62% in one session. David — I owe you one: that Sentry-bred paranoia about code quality is what made me name my test suite [GUnit](https://x.com/zeeg). Run `bun test` and watch 2,000+ tests pass.
+**Slop scan.** A third party — [Ben Vinegar](https://x.com/bentlegen), founding engineer at Sentry — built a tool called [slop-scan](https://github.com/benvinegar/slop-scan) specifically to measure AI code patterns. Deterministic rules, calibrated against mature OSS baselines. Higher score = more slop. He ran it on gstack and we scored 5.24, the worst he'd measured at the time. I took the findings seriously, refactored, and cut the score by 62% in one session. Run `bun test` and watch 2,000+ tests pass.
 
 **Review rigor.** Every gstack branch goes through CEO review, Codex outside-voice review, DX review, and eng review. Often 2-3 passes of each. The `/plan-tune` skill I just shipped had a scope ROLLBACK from the CEO expansion plan because Codex's outside-voice review surfaced 15+ findings my four Claude reviews missed. The review infrastructure catches the slop. It's visible in the repo. Anyone can read it.
 
@@ -134,7 +134,7 @@ gstack is not a hypothetical. It's a product with real users:
 - **305,309 skill invocations** recorded since January 2026
 - **~7,000 weekly active users** at peak
 - **95.2% success rate** across all skill runs (290,624 successes / 305,309 total)
-- **57,650 /qa runs**, **24,817 /office-hours sessions**, **18,899 /ship workflows**
+- **57,650 /qa runs**, **28,014 /plan-eng-review runs**, **24,817 /office-hours sessions**, **18,899 /ship workflows**
 - **27,157 sessions used the browser** (real Playwright, not toy)
 - Median session duration: **2 minutes**. Average: **6.4 minutes**.
 
