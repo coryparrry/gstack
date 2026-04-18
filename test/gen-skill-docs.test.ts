@@ -1667,6 +1667,26 @@ describe('Codex generation (--host codex)', () => {
     }
   });
 
+  test('Codex learn skill keeps learnings and memory flows on GSTACK runtime paths', () => {
+    const paths = [
+      path.join(AGENTS_DIR, 'gstack-learn', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack-learn', 'SKILL.md'),
+    ];
+
+    for (const skillPath of paths) {
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toContain('_LEARN_FILE="${GSTACK_HOME:-$HOME/.gstack}/projects/${SLUG:-unknown}/learnings.jsonl"');
+      expect(content).toContain('_PROJ="${GSTACK_HOME:-$HOME/.gstack}/projects/${SLUG:-unknown}"');
+      expect(content).toContain('$GSTACK_BIN/gstack-learnings-search --limit 3');
+      expect(content).toContain('$GSTACK_BIN/gstack-timeline-log');
+      expect(content).toContain('eval "$($GSTACK_ROOT/bin/gstack-slug 2>/dev/null)"');
+      expect(content).toContain('$GSTACK_ROOT/bin/gstack-learnings-search --limit 20');
+      expect(content).toContain('$GSTACK_ROOT/bin/gstack-learnings-log');
+      expect(content).not.toContain('~/.claude/skills/gstack/bin/');
+      expect(content).not.toContain('.claude/skills/gstack/bin/');
+    }
+  });
+
   test('/codex skill excluded from Codex output', () => {
     expect(fs.existsSync(path.join(AGENTS_DIR, 'gstack-codex', 'SKILL.md'))).toBe(false);
     expect(fs.existsSync(path.join(AGENTS_DIR, 'gstack-codex'))).toBe(false);

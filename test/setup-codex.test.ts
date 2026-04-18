@@ -145,6 +145,14 @@ describe('setup --host codex', () => {
       ).toEqual(
         [...manifest.runtimeBundle.assets].sort()
       );
+      for (const binary of [
+        'gstack-slug',
+        'gstack-learnings-search',
+        'gstack-learnings-log',
+        'gstack-timeline-log',
+      ]) {
+        expect(fs.existsSync(path.join(exportedRootDir, 'bin', binary))).toBe(true);
+      }
       expect(
         collectNamedFiles(exportedRootDir, 'openai.yaml')
       ).toEqual(['agents/openai.yaml']);
