@@ -7,9 +7,40 @@
 
 set -e
 
+if ! command -v bun >/dev/null 2>&1; then
+  BUN_WIN_PATH="$(where.exe bun 2>/dev/null | tr -d '\r' | head -n 1)"
+  if [ -n "$BUN_WIN_PATH" ]; then
+    if command -v cygpath >/dev/null 2>&1; then
+      BUN_BIN="$(cygpath -u "$BUN_WIN_PATH")"
+    elif command -v wslpath >/dev/null 2>&1; then
+      BUN_BIN="$(wslpath -u "$BUN_WIN_PATH")"
+    else
+      BUN_BIN=""
+    fi
+
+    if [ -n "$BUN_BIN" ]; then
+      BUN_SHIM_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t gstack-bun)"
+      ln -sf "$BUN_BIN" "$BUN_SHIM_DIR/bun"
+      PATH="$BUN_SHIM_DIR:$PATH"
+      export PATH
+    fi
+  fi
+fi
+
 GSTACK_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 SRC_DIR="$GSTACK_DIR/browse/src"
 DIST_DIR="$GSTACK_DIR/browse/dist"
+SERVER_TS_BUN_PATH="$SRC_DIR/server.ts"
+SERVER_OUT_BUN_PATH="$DIST_DIR/server-node.mjs"
+
+if [ -n "${BUN_BIN:-}" ] && command -v wslpath >/dev/null 2>&1; then
+  case "$BUN_BIN" in
+    *.exe)
+      SERVER_TS_BUN_PATH="$(wslpath -w "$SERVER_TS_BUN_PATH")"
+      SERVER_OUT_BUN_PATH="$(wslpath -w "$SERVER_OUT_BUN_PATH")"
+      ;;
+  esac
+fi
 
 echo "Building Node-compatible server bundle..."
 
@@ -19,9 +50,9 @@ echo "Building Node-compatible server bundle..."
 # If you add a new dependency that uses `await import()` or has a .node addon,
 # add it here. Otherwise `bun build --outfile` will fail with
 # "cannot write multiple output files without an output directory".
-bun build "$SRC_DIR/server.ts" \
+bun build "$SERVER_TS_BUN_PATH" \
   --target=node \
-  --outfile "$DIST_DIR/server-node.mjs" \
+  --outfile "$SERVER_OUT_BUN_PATH" \
   --external playwright \
   --external playwright-core \
   --external diff \

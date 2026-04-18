@@ -4,6 +4,34 @@ set -e
 umask 077  # Restrict new files to owner-only (0o600 files, 0o700 dirs)
 
 if ! command -v bun >/dev/null 2>&1; then
+  BUN_WIN_PATH="$(where.exe bun 2>/dev/null | tr -d '\r' | head -n 1)"
+  if [ -n "$BUN_WIN_PATH" ]; then
+    if command -v cygpath >/dev/null 2>&1; then
+      BUN_BIN="$(cygpath -u "$BUN_WIN_PATH")"
+    elif command -v wslpath >/dev/null 2>&1; then
+      BUN_BIN="$(wslpath -u "$BUN_WIN_PATH")"
+    else
+      BUN_BIN=""
+    fi
+
+    if [ -n "$BUN_BIN" ]; then
+      BUN_SHIM_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t gstack-bun)"
+      cat > "$BUN_SHIM_DIR/bun" <<EOF
+#!/usr/bin/env bash
+exec "$BUN_BIN" "\$@"
+EOF
+      cat > "$BUN_SHIM_DIR/bunx" <<EOF
+#!/usr/bin/env bash
+exec "$BUN_BIN" x "\$@"
+EOF
+      chmod +x "$BUN_SHIM_DIR/bun" "$BUN_SHIM_DIR/bunx"
+      PATH="$BUN_SHIM_DIR:$PATH"
+      export PATH
+    fi
+  fi
+fi
+
+if ! command -v bun >/dev/null 2>&1; then
   echo "Error: bun is required but not installed." >&2
   echo "Install with checksum verification:" >&2
   echo '  BUN_VERSION="1.3.10"' >&2
@@ -18,8 +46,12 @@ INSTALL_GSTACK_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_GSTACK_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 INSTALL_SKILLS_DIR="$(dirname "$INSTALL_GSTACK_DIR")"
 BROWSE_BIN="$SOURCE_GSTACK_DIR/browse/dist/browse"
-CODEX_SKILLS="$HOME/.codex/skills"
-CODEX_GSTACK="$CODEX_SKILLS/gstack"
+if [ ! -x "$BROWSE_BIN" ] && [ -x "$SOURCE_GSTACK_DIR/browse/dist/browse.exe" ]; then
+  BROWSE_BIN="$SOURCE_GSTACK_DIR/browse/dist/browse.exe"
+fi
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+CODEX_SKILLS="${CODEX_SKILLS:-$CODEX_HOME/skills}"
+CODEX_GSTACK="${CODEX_GSTACK:-$CODEX_SKILLS/gstack}"
 FACTORY_SKILLS="$HOME/.factory/skills"
 FACTORY_GSTACK="$FACTORY_SKILLS/gstack"
 OPENCODE_SKILLS="$HOME/.config/opencode/skills"
@@ -198,6 +230,9 @@ migrate_direct_codex_install() {
   INSTALL_GSTACK_DIR="$migrated_dir"
   INSTALL_SKILLS_DIR="$(dirname "$INSTALL_GSTACK_DIR")"
   BROWSE_BIN="$SOURCE_GSTACK_DIR/browse/dist/browse"
+  if [ ! -x "$BROWSE_BIN" ] && [ -x "$SOURCE_GSTACK_DIR/browse/dist/browse.exe" ]; then
+    BROWSE_BIN="$SOURCE_GSTACK_DIR/browse/dist/browse.exe"
+  fi
 }
 
 if [ "$INSTALL_CODEX" -eq 1 ]; then
@@ -322,6 +357,7 @@ if [ "$INSTALL_OPENCODE" -eq 1 ] && [ "$NEEDS_BUILD" -eq 0 ]; then
 fi
 
 # 2. Ensure Playwright's Chromium is available
+if [ "${GSTACK_SKIP_PLAYWRIGHT_SETUP:-0}" != "1" ]; then
 if ! ensure_playwright_browser; then
   echo "Installing Playwright Chromium..."
   (
@@ -359,6 +395,7 @@ if ! ensure_playwright_browser; then
     echo "gstack setup failed: Playwright Chromium could not be launched" >&2
   fi
   exit 1
+fi
 fi
 
 # 3. Ensure ~/.gstack global state directory exists
