@@ -1742,8 +1742,38 @@ describe('Codex generation (--host codex)', () => {
     // Every Codex skill should be FRESH
     for (const skill of CODEX_SKILLS) {
       expect(output).toContain(`FRESH: .agents/skills/${skill.codexName}/SKILL.md`);
+      expect(output).toContain(`FRESH: .codex-app/skills/${skill.codexName}/SKILL.md`);
+      expect(output).toContain(`FRESH: .codex-app/skills/${skill.codexName}/agents/openai.yaml`);
     }
+    expect(output).toContain('FRESH: .codex-app/manifest.json');
     expect(output).not.toContain('STALE');
+  });
+
+  test('--host codex --dry-run does not rewrite app export files', () => {
+    const skillPath = path.join(CODEX_APP_DIR, 'skills', 'gstack-office-hours', 'SKILL.md');
+    const metadataPath = path.join(CODEX_APP_DIR, 'skills', 'gstack-office-hours', 'agents', 'openai.yaml');
+    const manifestPath = path.join(CODEX_APP_DIR, 'manifest.json');
+
+    const before = [
+      fs.statSync(skillPath).mtimeMs,
+      fs.statSync(metadataPath).mtimeMs,
+      fs.statSync(manifestPath).mtimeMs,
+    ];
+
+    const result = Bun.spawnSync(['bun', 'run', 'scripts/gen-skill-docs.ts', '--host', 'codex', '--dry-run'], {
+      cwd: ROOT,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    expect(result.exitCode).toBe(0);
+
+    const after = [
+      fs.statSync(skillPath).mtimeMs,
+      fs.statSync(metadataPath).mtimeMs,
+      fs.statSync(manifestPath).mtimeMs,
+    ];
+    expect(after).toEqual(before);
   });
 
   test('--host agents alias produces same output as --host codex', () => {

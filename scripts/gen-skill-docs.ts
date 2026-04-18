@@ -227,6 +227,11 @@ interface AppExportSkill {
   metadataPath: string | null;
 }
 
+interface AppExportWriteResult {
+  skill: AppExportSkill;
+  stale: boolean;
+}
+
 function listRuntimeBundleAssets(hostConfig: HostConfig): string[] {
   const assets = ['SKILL.md', 'agents/openai.yaml'];
 
@@ -250,38 +255,61 @@ function writeAppExportSkill(
   skillName: string,
   content: string,
   metadataContent: string | null,
-): AppExportSkill | null {
+): AppExportWriteResult | null {
   const hostConfig = getHostConfig(host);
   if (!hostConfig.appExport) return null;
 
   const exportRoot = path.join(ROOT, hostConfig.appExport.root);
   const skillDir = path.join(exportRoot, hostConfig.appExport.skillRoot, skillName);
-  fs.mkdirSync(skillDir, { recursive: true });
-
   const skillPath = path.join(skillDir, 'SKILL.md');
-  fs.writeFileSync(skillPath, content);
-
   let metadataPath: string | null = null;
+  let stale = false;
+
+  if (DRY_RUN) {
+    const existingSkill = fs.existsSync(skillPath) ? fs.readFileSync(skillPath, 'utf-8') : '';
+    if (existingSkill !== content) {
+      console.log(`STALE: ${path.relative(ROOT, skillPath).replace(/\\/g, '/')}`);
+      stale = true;
+    } else {
+      console.log(`FRESH: ${path.relative(ROOT, skillPath).replace(/\\/g, '/')}`);
+    }
+  } else {
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(skillPath, content);
+  }
+
   if (metadataContent) {
-    const agentsDir = path.join(skillDir, 'agents');
-    fs.mkdirSync(agentsDir, { recursive: true });
-    metadataPath = path.join(agentsDir, 'openai.yaml');
-    fs.writeFileSync(metadataPath, metadataContent);
+    metadataPath = path.join(skillDir, 'agents', 'openai.yaml');
+    if (DRY_RUN) {
+      const existingMetadata = fs.existsSync(metadataPath) ? fs.readFileSync(metadataPath, 'utf-8') : '';
+      if (existingMetadata !== metadataContent) {
+        console.log(`STALE: ${path.relative(ROOT, metadataPath).replace(/\\/g, '/')}`);
+        stale = true;
+      } else {
+        console.log(`FRESH: ${path.relative(ROOT, metadataPath).replace(/\\/g, '/')}`);
+      }
+    } else {
+      const agentsDir = path.join(skillDir, 'agents');
+      fs.mkdirSync(agentsDir, { recursive: true });
+      fs.writeFileSync(metadataPath, metadataContent);
+    }
   }
 
   return {
-    name: skillName,
-    skillPath: path.relative(exportRoot, skillPath).replace(/\\/g, '/'),
-    metadataPath: metadataPath ? path.relative(exportRoot, metadataPath).replace(/\\/g, '/') : null,
+    skill: {
+      name: skillName,
+      skillPath: path.relative(exportRoot, skillPath).replace(/\\/g, '/'),
+      metadataPath: metadataPath ? path.relative(exportRoot, metadataPath).replace(/\\/g, '/') : null,
+    },
+    stale,
   };
 }
 
-function writeAppExportManifest(host: Host, skills: AppExportSkill[]): void {
+function writeAppExportManifest(host: Host, skills: AppExportSkill[]): boolean {
   const hostConfig = getHostConfig(host);
-  if (!hostConfig.appExport) return;
+  if (!hostConfig.appExport) return false;
 
   const exportRoot = path.join(ROOT, hostConfig.appExport.root);
-  fs.mkdirSync(exportRoot, { recursive: true });
 
   const manifest = {
     schemaVersion: 1,
@@ -309,10 +337,22 @@ function writeAppExportManifest(host: Host, skills: AppExportSkill[]): void {
     skills: [...skills].sort((a, b) => a.name.localeCompare(b.name)),
   };
 
-  fs.writeFileSync(
-    path.join(exportRoot, hostConfig.appExport.manifestFile),
-    JSON.stringify(manifest, null, 2) + '\n',
-  );
+  const manifestPath = path.join(exportRoot, hostConfig.appExport.manifestFile);
+  const manifestContent = JSON.stringify(manifest, null, 2) + '\n';
+
+  if (DRY_RUN) {
+    const existingManifest = fs.existsSync(manifestPath) ? fs.readFileSync(manifestPath, 'utf-8') : '';
+    if (existingManifest !== manifestContent) {
+      console.log(`STALE: ${path.relative(ROOT, manifestPath).replace(/\\/g, '/')}`);
+      return true;
+    }
+    console.log(`FRESH: ${path.relative(ROOT, manifestPath).replace(/\\/g, '/')}`);
+    return false;
+  }
+
+  fs.mkdirSync(exportRoot, { recursive: true });
+  fs.writeFileSync(manifestPath, manifestContent);
+  return false;
 }
 
 /**
@@ -665,13 +705,18 @@ for (const currentHost of hostsToRun) {
         const metadataContent = currentHostConfig.generation.generateMetadata
           ? generateOpenAIYaml(skillName, condenseOpenAIShortDescription(generatedDescription))
           : null;
-        const appExportSkill = writeAppExportSkill(currentHost, skillName, content, metadataContent);
-        if (appExportSkill) appExportSkills.push(appExportSkill);
+        const appExportResult = writeAppExportSkill(currentHost, skillName, content, metadataContent);
+        if (appExportResult) {
+          appExportSkills.push(appExportResult.skill);
+          if (appExportResult.stale) hasChanges = true;
+        }
       }
     }
 
     if (currentHostConfig.appExport) {
-      writeAppExportManifest(currentHost, appExportSkills);
+      if (writeAppExportManifest(currentHost, appExportSkills)) {
+        hasChanges = true;
+      }
       if (!DRY_RUN) {
         console.log(`GENERATED: ${currentHostConfig.appExport.root}/${currentHostConfig.appExport.manifestFile}`);
       }

@@ -40,6 +40,7 @@ export interface CodexCommandProbe {
   reason: string | null;
   command: string[] | null;
   discoveredPath: string | null;
+  launcher: 'codex' | 'npx' | 'custom' | null;
 }
 
 // --- JSONL parser (ported from Python in codex/SKILL.md.tmpl) ---
@@ -122,18 +123,43 @@ export function probeCodexCommand(): CodexCommandProbe {
       reason: null,
       command: [envOverride],
       discoveredPath: envOverride,
+      launcher: 'custom',
     };
   }
+
+  const canRun = (command: string[]): boolean => {
+    try {
+      const result = Bun.spawnSync(command, {
+        stdout: 'ignore',
+        stderr: 'ignore',
+      });
+      return result.exitCode === 0;
+    } catch {
+      return false;
+    }
+  };
+  const npxBinary = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 
   const lookup = process.platform === 'win32'
     ? Bun.spawnSync(['where.exe', 'codex'])
     : Bun.spawnSync(['which', 'codex']);
   if (lookup.exitCode !== 0) {
+    const npxCommand = [npxBinary, '-y', '@openai/codex'];
+    if (canRun([...npxCommand, '--version'])) {
+      return {
+        available: true,
+        reason: null,
+        command: npxCommand,
+        discoveredPath: null,
+        launcher: 'npx',
+      };
+    }
     return {
       available: false,
-      reason: 'codex binary not found',
+      reason: 'codex binary not found and npx fallback is unavailable',
       command: null,
       discoveredPath: null,
+      launcher: null,
     };
   }
 
@@ -144,26 +170,40 @@ export function probeCodexCommand(): CodexCommandProbe {
       reason: 'codex binary not found',
       command: null,
       discoveredPath: null,
+      launcher: null,
     };
   }
 
-  if (
-    process.platform === 'win32'
-    && /\\WindowsApps\\OpenAI\.Codex_/i.test(discoveredPath)
-  ) {
+  if (canRun(['codex', '--version'])) {
     return {
-      available: false,
-      reason: `codex resolves to WindowsApps package path that Bun cannot execute directly: ${discoveredPath}`,
-      command: null,
+      available: true,
+      reason: null,
+      command: ['codex'],
       discoveredPath,
+      launcher: 'codex',
     };
   }
 
+  const npxCommand = [npxBinary, '-y', '@openai/codex'];
+  if (canRun([...npxCommand, '--version'])) {
+    return {
+      available: true,
+      reason: null,
+      command: npxCommand,
+      discoveredPath,
+      launcher: 'npx',
+    };
+  }
+
+  const reason = process.platform === 'win32' && /\\WindowsApps\\OpenAI\.Codex_/i.test(discoveredPath)
+    ? `codex resolves to WindowsApps package path that Bun cannot execute directly and npx fallback is unavailable: ${discoveredPath}`
+    : `codex was discovered at ${discoveredPath} but is not executable from Bun, and npx fallback is unavailable`;
   return {
-    available: true,
-    reason: null,
-    command: ['codex'],
+    available: false,
+    reason,
+    command: null,
     discoveredPath,
+    launcher: null,
   };
 }
 
@@ -231,6 +271,7 @@ export async function runCodexSkill(opts: {
   skillName?: string;       // Skill name for installation (default: dirname)
   skills?: CodexSkillInstall[]; // Additional skills to install into temp HOME
   projectInstructions?: string; // Optional project-level AGENTS.md content
+  skipGitRepoCheck?: boolean;
   sandbox?: string;         // Sandbox mode (default: 'read-only')
 }): Promise<CodexResult> {
   const {
@@ -241,6 +282,7 @@ export async function runCodexSkill(opts: {
     skillName,
     skills,
     projectInstructions,
+    skipGitRepoCheck = false,
     sandbox = 'read-only',
   } = opts;
 
@@ -278,14 +320,21 @@ export async function runCodexSkill(opts: {
     const realCodexConfig = path.join(realHome, '.codex');
     const tempCodexDir = path.join(tempHome, '.codex');
     if (fs.existsSync(realCodexConfig)) {
-      // Copy auth-related files from real ~/.codex/ into temp ~/.codex/
-      // (skills/ is already set up by installSkillToTempHome)
-      const entries = fs.readdirSync(realCodexConfig);
-      for (const entry of entries) {
-        if (entry === 'skills') continue; // don't clobber our test skills
+      // Copy only the durable auth/config files needed for Codex CLI startup.
+      // SQLite logs/state and session indexes are actively written by the
+      // desktop app and can be locked on Windows.
+      const authArtifacts = [
+        'auth.json',
+        'config.toml',
+        'cap_sid',
+        'installation_id',
+        '.codex-global-state.json',
+        '.personality_migration',
+      ];
+      for (const entry of authArtifacts) {
         const src = path.join(realCodexConfig, entry);
         const dst = path.join(tempCodexDir, entry);
-        if (!fs.existsSync(dst)) {
+        if (fs.existsSync(src) && !fs.existsSync(dst)) {
           fs.cpSync(src, dst, { recursive: true });
         }
       }
@@ -298,10 +347,12 @@ export async function runCodexSkill(opts: {
 
     // Build codex exec command
     const args = ['exec', prompt, '--json', '-s', sandbox];
+    if (skipGitRepoCheck) args.push('--skip-git-repo-check');
 
     // Spawn codex with temp HOME so it discovers our installed skill
     const proc = Bun.spawn([...codex.command, ...args], {
       cwd: cwd || skillDir,
+      stdin: 'ignore',
       stdout: 'pipe',
       stderr: 'pipe',
       env: {

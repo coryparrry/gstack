@@ -68,7 +68,28 @@ log() { [ "$QUIET" -eq 0 ] && echo "$@" || true; }
 
 normalize_setup_path() {
   [ -n "$1" ] || return 1
-  realpath -m -- "$1" 2>/dev/null
+  local target="$1"
+  local base
+  local parent
+  local normalized_parent
+
+  case "$target" in
+    /) printf '/\n'; return 0 ;;
+  esac
+
+  base="$(basename -- "$target")" || return 1
+  parent="$(dirname -- "$target")" || return 1
+
+  if [ -d "$parent" ]; then
+    normalized_parent="$(cd "$parent" 2>/dev/null && pwd -P)" || return 1
+  else
+    normalized_parent="$(normalize_setup_path "$parent")" || return 1
+  fi
+
+  case "$normalized_parent" in
+    /) printf '/%s\n' "$base" ;;
+    *) printf '%s/%s\n' "$normalized_parent" "$base" ;;
+  esac
 }
 
 assert_path_within() {
