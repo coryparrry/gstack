@@ -79,4 +79,25 @@ describe('setup --host codex', () => {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
   }, 300_000);
+
+  test('rejects Codex install roots that escape the declared Codex home', () => {
+    const tempHome = mkTmpHome();
+    const codexHome = path.join(tempHome, '.codex');
+    const escapedGstack = path.join(tempHome, 'escaped-gstack');
+    const shellCodexHome = toShellPath(codexHome);
+    const shellEscapedGstack = toShellPath(escapedGstack);
+
+    try {
+      const result = spawnSync('bash', ['-lc', `CODEX_HOME='${shellCodexHome}' CODEX_GSTACK='${shellEscapedGstack}' GSTACK_SKIP_COREUTILS=1 GSTACK_SKIP_PLAYWRIGHT_SETUP=1 ./setup --host codex -q`], {
+        cwd: ROOT,
+        encoding: 'utf-8',
+        timeout: 60_000,
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('unsafe CODEX_GSTACK path outside');
+    } finally {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
+  }, 90_000);
 });

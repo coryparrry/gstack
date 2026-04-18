@@ -66,6 +66,51 @@ esac
 QUIET=0
 log() { [ "$QUIET" -eq 0 ] && echo "$@" || true; }
 
+normalize_setup_path() {
+  [ -n "$1" ] || return 1
+  realpath -m -- "$1" 2>/dev/null
+}
+
+assert_path_within() {
+  local child="$1"
+  local parent="$2"
+  local label="$3"
+
+  case "$child" in
+    "$parent"|"$parent"/*) ;;
+    *)
+      echo "gstack setup failed: unsafe $label path outside $parent" >&2
+      exit 1
+      ;;
+  esac
+}
+
+validate_codex_install_paths() {
+  local codex_home_norm
+  local codex_skills_norm
+  local codex_gstack_norm
+
+  codex_home_norm="$(normalize_setup_path "$CODEX_HOME")" || {
+    echo "gstack setup failed: could not normalize CODEX_HOME" >&2
+    exit 1
+  }
+  codex_skills_norm="$(normalize_setup_path "$CODEX_SKILLS")" || {
+    echo "gstack setup failed: could not normalize CODEX_SKILLS" >&2
+    exit 1
+  }
+  codex_gstack_norm="$(normalize_setup_path "$CODEX_GSTACK")" || {
+    echo "gstack setup failed: could not normalize CODEX_GSTACK" >&2
+    exit 1
+  }
+
+  assert_path_within "$codex_skills_norm" "$codex_home_norm" "CODEX_SKILLS"
+  assert_path_within "$codex_gstack_norm" "$codex_skills_norm" "CODEX_GSTACK"
+
+  CODEX_HOME="$codex_home_norm"
+  CODEX_SKILLS="$codex_skills_norm"
+  CODEX_GSTACK="$codex_gstack_norm"
+}
+
 # â”€â”€â”€ Parse flags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 HOST="claude"
 LOCAL_INSTALL=0
@@ -207,6 +252,10 @@ elif [ "$HOST" = "factory" ]; then
   INSTALL_FACTORY=1
 elif [ "$HOST" = "opencode" ]; then
   INSTALL_OPENCODE=1
+fi
+
+if [ "$INSTALL_CODEX" -eq 1 ]; then
+  validate_codex_install_paths
 fi
 
 migrate_direct_codex_install() {
