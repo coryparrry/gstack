@@ -41,6 +41,35 @@ function readShellRealPath(targetPath: string): string | null {
   return resolved.length > 0 ? resolved : null;
 }
 
+function collectRuntimeBundleAssets(runtimeRoot: string, declaredAssets: string[]): string[] {
+  const declared = new Set(declaredAssets);
+  const collected = new Set<string>();
+
+  function visit(currentPath: string, relativePath = ''): void {
+    const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const nextRelative = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+      const nextPath = path.join(currentPath, entry.name);
+
+      if (declared.has(nextRelative)) {
+        collected.add(nextRelative);
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        visit(nextPath, nextRelative);
+        continue;
+      }
+
+      collected.add(nextRelative);
+    }
+  }
+
+  visit(runtimeRoot);
+  return [...collected].sort();
+}
+
 describe('setup --host codex', () => {
   test('installs Codex runtime and skills from the .codex-app bundle', () => {
     const tempHome = mkTmpHome();
@@ -75,6 +104,11 @@ describe('setup --host codex', () => {
 
       const installedRoot = path.join(codexHome, 'skills', 'gstack');
       const exportedRootDir = path.join(ROOT, '.codex-app', 'runtime', 'gstack');
+      expect(
+        collectRuntimeBundleAssets(exportedRootDir, manifest.runtimeBundle.assets)
+      ).toEqual(
+        [...manifest.runtimeBundle.assets].sort()
+      );
       expect(readShellRealPath(installedRoot)).toBe(toShellPath(exportedRootDir));
 
       const installedReviewDir = path.join(codexHome, 'skills', 'gstack-review');
