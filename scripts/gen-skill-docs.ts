@@ -227,6 +227,24 @@ interface AppExportSkill {
   metadataPath: string | null;
 }
 
+function listRuntimeBundleAssets(hostConfig: HostConfig): string[] {
+  const assets = ['SKILL.md', 'agents/openai.yaml'];
+
+  for (const link of hostConfig.runtimeRoot.globalSymlinks) {
+    assets.push(link);
+  }
+
+  if (hostConfig.runtimeRoot.globalFiles) {
+    for (const [dir, files] of Object.entries(hostConfig.runtimeRoot.globalFiles)) {
+      for (const file of files) {
+        assets.push(`${dir}/${file}`);
+      }
+    }
+  }
+
+  return [...new Set(assets)].sort();
+}
+
 function writeAppExportSkill(
   host: Host,
   skillName: string,
@@ -269,10 +287,17 @@ function writeAppExportManifest(host: Host, skills: AppExportSkill[]): void {
     schemaVersion: 1,
     host,
     skillRoot: hostConfig.appExport.skillRoot,
+    runtimeRoot: hostConfig.appExport.runtimeRoot,
     rootBundle: {
       name: 'gstack',
       path: `${hostConfig.appExport.skillRoot}/gstack/SKILL.md`,
       metadataPath: `${hostConfig.appExport.skillRoot}/gstack/agents/openai.yaml`,
+    },
+    runtimeBundle: {
+      path: hostConfig.appExport.runtimeRoot,
+      skillPath: `${hostConfig.appExport.runtimeRoot}/SKILL.md`,
+      metadataPath: `${hostConfig.appExport.runtimeRoot}/agents/openai.yaml`,
+      assets: listRuntimeBundleAssets(hostConfig),
     },
     runtime: {
       globalRoot: hostConfig.globalRoot,

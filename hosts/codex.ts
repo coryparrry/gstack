@@ -27,6 +27,7 @@ const codex: HostConfig = {
   appExport: {
     root: '.codex-app',
     skillRoot: 'skills',
+    runtimeRoot: 'runtime/gstack',
     manifestFile: 'manifest.json',
   },
 
@@ -50,7 +51,7 @@ const codex: HostConfig = {
   runtimeRoot: {
     globalSymlinks: ['bin', 'browse/dist', 'browse/bin', 'gstack-upgrade', 'ETHOS.md'],
     globalFiles: {
-      'review': ['checklist.md', 'TODOS-format.md'],
+      'review': ['checklist.md', 'design-checklist.md', 'greptile-triage.md', 'TODOS-format.md'],
     },
   },
   sidecar: {

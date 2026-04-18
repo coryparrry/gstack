@@ -463,6 +463,7 @@ describe('host config correctness', () => {
     expect(codex.appExport).toBeDefined();
     expect(codex.appExport!.root).toBe('.codex-app');
     expect(codex.appExport!.skillRoot).toBe('skills');
+    expect(codex.appExport!.runtimeRoot).toBe('runtime/gstack');
     expect(codex.appExport!.manifestFile).toBe('manifest.json');
   });
 

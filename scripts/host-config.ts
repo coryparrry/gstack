@@ -72,6 +72,8 @@ export interface HostConfig {
     root: string;
     /** Skill directory under the export root. */
     skillRoot: string;
+    /** Runtime bundle directory under the export root. */
+    runtimeRoot: string;
     /** Manifest filename under the export root. */
     manifestFile: string;
   };

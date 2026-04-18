@@ -1611,8 +1611,16 @@ describe('Codex generation (--host codex)', () => {
     expect(manifest.schemaVersion).toBe(1);
     expect(manifest.host).toBe('codex');
     expect(manifest.skillRoot).toBe('skills');
+    expect(manifest.runtimeRoot).toBe('runtime/gstack');
     expect(manifest.rootBundle.name).toBe('gstack');
     expect(manifest.rootBundle.path).toBe('skills/gstack/SKILL.md');
+    expect(manifest.runtimeBundle.path).toBe('runtime/gstack');
+    expect(manifest.runtimeBundle.skillPath).toBe('runtime/gstack/SKILL.md');
+    expect(manifest.runtimeBundle.metadataPath).toBe('runtime/gstack/agents/openai.yaml');
+    expect(manifest.runtimeBundle.assets).toContain('bin');
+    expect(manifest.runtimeBundle.assets).toContain('browse/dist');
+    expect(manifest.runtimeBundle.assets).toContain('gstack-upgrade');
+    expect(manifest.runtimeBundle.assets).toContain('review/design-checklist.md');
     expect(manifest.runtime.globalRoot).toBe('.codex/skills/gstack');
     expect(manifest.runtime.localSkillRoot).toBe('.agents/skills/gstack');
     expect(manifest.runtime.sidecar.path).toBe('.agents/skills/gstack');
@@ -1621,6 +1629,28 @@ describe('Codex generation (--host codex)', () => {
     const exportedSkillNames = manifest.skills.map((skill: { name: string }) => skill.name).sort();
     const expectedSkillNames = CODEX_SKILLS.map(skill => skill.codexName).sort();
     expect(exportedSkillNames).toEqual(expectedSkillNames);
+  });
+
+  test('codex:export materializes a self-contained runtime bundle', () => {
+    const result = Bun.spawnSync(['bun', 'run', 'codex:export'], {
+      cwd: ROOT,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    expect(result.exitCode).toBe(0);
+
+    const runtimeRoot = path.join(CODEX_APP_DIR, 'runtime', 'gstack');
+    expect(fs.existsSync(path.join(runtimeRoot, 'SKILL.md'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'agents', 'openai.yaml'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'bin'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'browse', 'dist'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'browse', 'bin'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'review', 'checklist.md'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'review', 'design-checklist.md'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'review', 'greptile-triage.md'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'review', 'TODOS-format.md'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'gstack-upgrade', 'SKILL.md'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'ETHOS.md'))).toBe(true);
   });
 
   test('no .claude/skills/ in Codex output', () => {
