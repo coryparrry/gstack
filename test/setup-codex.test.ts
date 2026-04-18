@@ -67,6 +67,11 @@ describe('setup --host codex', () => {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
       expect(manifest.host).toBe('codex');
       expect(manifest.runtimeRoot).toBe('runtime/gstack');
+      expect(
+        fs.readdirSync(path.join(codexHome, 'skills')).sort()
+      ).toEqual(
+        manifest.skills.map((skill: { name: string }) => skill.name).sort()
+      );
 
       const installedRoot = path.join(codexHome, 'skills', 'gstack');
       const exportedRootDir = path.join(ROOT, '.codex-app', 'runtime', 'gstack');
