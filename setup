@@ -809,6 +809,33 @@ EOF
   mv "$tmp_config" "$config_path"
 }
 
+ensure_codex_plugin_enabled() {
+  local codex_home="$1"
+  local config_path="$codex_home/config.toml"
+
+  mkdir -p "$codex_home"
+  touch "$config_path"
+  tmp_config="$(mktemp "${TMPDIR:-/tmp}/gstack-codex-plugin-config.XXXXXX")"
+
+  awk '
+    BEGIN { skip = 0 }
+    /^\[plugins\."gstack@gstack-local"\]$/ { skip = 1; next }
+    skip && /^\[/ { skip = 0 }
+    !skip { print }
+  ' "$config_path" > "$tmp_config"
+
+  if [ -s "$tmp_config" ]; then
+    printf '\n' >> "$tmp_config"
+  fi
+
+  cat >> "$tmp_config" <<EOF
+[plugins."gstack@gstack-local"]
+enabled = true
+EOF
+
+  mv "$tmp_config" "$config_path"
+}
+
 install_codex_local_marketplace() {
   local gstack_dir="$1"
   local codex_home="$2"
@@ -844,6 +871,7 @@ install_codex_local_marketplace() {
   cp -R "$plugin_root" "$cache_root_norm"
 
   ensure_codex_marketplace_registered "$codex_home" "$marketplace_root"
+  ensure_codex_plugin_enabled "$codex_home"
 }
 
 create_factory_runtime_root() {

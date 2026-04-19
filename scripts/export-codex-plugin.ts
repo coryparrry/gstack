@@ -72,10 +72,44 @@ function writeJson(targetPath: string, value: unknown): void {
   fs.writeFileSync(targetPath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function filesMatch(source: string, destination: string): boolean {
+  if (!fs.existsSync(destination)) return false;
+  const sourceStat = fs.statSync(source);
+  const destinationStat = fs.statSync(destination);
+  return sourceStat.size === destinationStat.size && Math.trunc(sourceStat.mtimeMs) === Math.trunc(destinationStat.mtimeMs);
+}
+
+function copyPathIncremental(source: string, destination: string): void {
+  const sourceStat = fs.statSync(source);
+  if (sourceStat.isDirectory()) {
+    fs.mkdirSync(destination, { recursive: true });
+    for (const entry of fs.readdirSync(source)) {
+      copyPathIncremental(path.join(source, entry), path.join(destination, entry));
+    }
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  if (filesMatch(source, destination)) return;
+
+  try {
+    fs.copyFileSync(source, destination);
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === 'EBUSY' && fs.existsSync(destination)) {
+      const destinationSize = fs.statSync(destination).size;
+      if (sourceStat.size === destinationSize) {
+        console.warn(`SKIPPED_BUSY: ${path.relative(ROOT, destination)}`);
+        return;
+      }
+    }
+    throw error;
+  }
+}
+
 function syncDirectory(source: string, destination: string): void {
   ensureExists(source, 'plugin export source');
-  fs.mkdirSync(destination, { recursive: true });
-  fs.cpSync(source, destination, { recursive: true, force: true });
+  copyPathIncremental(source, destination);
 }
 
 const exportedSkillRoot = path.join(exportRoot, hostConfig.appExport.skillRoot);
@@ -94,8 +128,8 @@ const extensionIcon48 = path.join(ROOT, 'extension', 'icons', 'icon-48.png');
 const extensionIcon128 = path.join(ROOT, 'extension', 'icons', 'icon-128.png');
 if (fs.existsSync(extensionIcon48) && fs.existsSync(extensionIcon128)) {
   fs.mkdirSync(pluginAssetsRoot, { recursive: true });
-  fs.copyFileSync(extensionIcon48, path.join(pluginAssetsRoot, 'composer-icon.png'));
-  fs.copyFileSync(extensionIcon128, path.join(pluginAssetsRoot, 'logo.png'));
+  copyPathIncremental(extensionIcon48, path.join(pluginAssetsRoot, 'composer-icon.png'));
+  copyPathIncremental(extensionIcon128, path.join(pluginAssetsRoot, 'logo.png'));
 }
 
 const pluginManifest = {

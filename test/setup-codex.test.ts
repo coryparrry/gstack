@@ -165,6 +165,8 @@ describe('setup --host codex', () => {
       expect(fs.existsSync(configPath)).toBe(true);
       const configContent = fs.readFileSync(configPath, 'utf-8');
       expect(configContent).toContain('[marketplaces.gstack-local]');
+      expect(configContent).toContain('[plugins."gstack@gstack-local"]');
+      expect(configContent).toContain('enabled = true');
       expect(configContent).toContain('source_type = "local"');
       expect(configContent).toContain('local-marketplaces');
       expect(configContent).toContain('gstack-local');
