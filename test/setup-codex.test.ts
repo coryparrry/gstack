@@ -175,23 +175,24 @@ describe('setup --host codex', () => {
       expect(fs.existsSync(path.join(installedPluginRoot, 'runtime', 'gstack', 'SKILL.md'))).toBe(true);
       expect(fs.existsSync(path.join(installedPluginRoot, 'skills', 'gstack-review', 'SKILL.md'))).toBe(true);
       expect(
-        fs.readdirSync(path.join(codexHome, 'skills')).sort()
-      ).toEqual(
-        manifest.skills.map((skill: { name: string }) => skill.name).sort()
-      );
+        fs.readdirSync(path.join(codexHome, 'skills')).filter((name) => name.startsWith('gstack'))
+      ).toEqual([]);
 
       for (const skill of manifest.skills as Array<{ name: string; metadataPath: string }>) {
-        const installedMetadataPath = path.join(codexHome, 'skills', skill.name, 'agents', 'openai.yaml');
+        const installedMetadataPath =
+          skill.name === 'gstack'
+            ? path.join(installedPluginRoot, 'runtime', 'gstack', 'agents', 'openai.yaml')
+            : path.join(installedPluginRoot, 'skills', skill.name, 'agents', 'openai.yaml');
         const exportedMetadataPath = path.join(
           ROOT,
           '.codex-app',
           skill.name === 'gstack' ? manifest.runtimeBundle.metadataPath : skill.metadataPath
         );
-        expect(readShellRealPath(installedMetadataPath)).toBe(toShellPath(exportedMetadataPath));
+        expect(fs.readFileSync(installedMetadataPath, 'utf-8')).toBe(fs.readFileSync(exportedMetadataPath, 'utf-8'));
         expect(fs.readFileSync(exportedMetadataPath, 'utf-8').trim().length).toBeGreaterThan(0);
       }
 
-      const installedRoot = path.join(codexHome, 'skills', 'gstack');
+      const installedRoot = path.join(installedPluginRoot, 'runtime', 'gstack');
       const exportedRootDir = path.join(ROOT, '.codex-app', 'runtime', 'gstack');
       expect(
         collectRuntimeBundleAssets(exportedRootDir, manifest.runtimeBundle.assets)
@@ -212,11 +213,13 @@ describe('setup --host codex', () => {
       expect(
         collectNamedFiles(exportedRootDir, 'SKILL.md')
       ).toEqual(['SKILL.md', 'gstack-upgrade/SKILL.md']);
-      expect(readShellRealPath(installedRoot)).toBe(toShellPath(exportedRootDir));
+      expect(fs.existsSync(installedRoot)).toBe(true);
 
-      const installedReviewDir = path.join(codexHome, 'skills', 'gstack-review');
+      const installedReviewDir = path.join(installedPluginRoot, 'skills', 'gstack-review');
       const exportedReviewDir = path.join(ROOT, '.codex-app', 'skills', 'gstack-review');
-      expect(readShellRealPath(installedReviewDir)).toBe(toShellPath(exportedReviewDir));
+      expect(fs.readFileSync(path.join(installedReviewDir, 'SKILL.md'), 'utf-8')).toBe(
+        fs.readFileSync(path.join(exportedReviewDir, 'SKILL.md'), 'utf-8')
+      );
 
       for (const skill of manifest.skills as Array<{ name: string }>) {
         const exportedSkillPath =
@@ -225,7 +228,7 @@ describe('setup --host codex', () => {
             : path.join(ROOT, '.codex-app', 'skills', skill.name, 'SKILL.md');
         const content = fs.readFileSync(exportedSkillPath, 'utf-8');
         for (const targetSkill of collectCrossSkillTargets(content)) {
-          expect(readShellRealPath(path.join(codexHome, 'skills', targetSkill))).not.toBeNull();
+          expect(fs.existsSync(path.join(installedPluginRoot, 'skills', targetSkill, 'SKILL.md'))).toBe(true);
         }
       }
     } finally {
@@ -280,7 +283,7 @@ describe('setup --host codex', () => {
       expect(run('git', ['add', '.']).status).toBe(0);
       expect(run('git', ['commit', '-m', 'initial']).status).toBe(0);
 
-      const codexGstack = path.join(codexHome, 'skills', 'gstack');
+      const codexGstack = path.join(codexHome, 'plugins', 'cache', 'gstack-local', 'gstack', 'runtime', 'gstack');
       const slugBin = readShellRealPath(path.join(codexGstack, 'bin', 'gstack-slug'));
       const learningsLogBin = readShellRealPath(path.join(codexGstack, 'bin', 'gstack-learnings-log'));
       const learningsSearchBin = readShellRealPath(path.join(codexGstack, 'bin', 'gstack-learnings-search'));
