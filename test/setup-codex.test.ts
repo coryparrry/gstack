@@ -157,15 +157,21 @@ describe('setup --host codex', () => {
       const marketplaceRoot = path.join(codexHome, 'local-marketplaces', 'gstack-local');
       const pluginManifestPath = path.join(marketplaceRoot, 'plugins', 'gstack', '.codex-plugin', 'plugin.json');
       const marketplaceManifestPath = path.join(marketplaceRoot, '.agents', 'plugins', 'marketplace.json');
+      const installedPluginRoot = path.join(codexHome, 'plugins', 'cache', 'gstack-local', 'gstack');
       const configPath = path.join(codexHome, 'config.toml');
       expect(fs.existsSync(pluginManifestPath)).toBe(true);
       expect(fs.existsSync(marketplaceManifestPath)).toBe(true);
+      expect(fs.existsSync(path.join(installedPluginRoot, '.codex-plugin', 'plugin.json'))).toBe(true);
       expect(fs.existsSync(configPath)).toBe(true);
       const configContent = fs.readFileSync(configPath, 'utf-8');
       expect(configContent).toContain('[marketplaces.gstack-local]');
       expect(configContent).toContain('source_type = "local"');
       expect(configContent).toContain('local-marketplaces');
       expect(configContent).toContain('gstack-local');
+      const marketplaceContent = JSON.parse(fs.readFileSync(marketplaceManifestPath, 'utf-8'));
+      expect(marketplaceContent.plugins[0].policy.installation).toBe('INSTALLED_BY_DEFAULT');
+      expect(fs.existsSync(path.join(installedPluginRoot, 'runtime', 'gstack', 'SKILL.md'))).toBe(true);
+      expect(fs.existsSync(path.join(installedPluginRoot, 'skills', 'gstack-review', 'SKILL.md'))).toBe(true);
       expect(
         fs.readdirSync(path.join(codexHome, 'skills')).sort()
       ).toEqual(

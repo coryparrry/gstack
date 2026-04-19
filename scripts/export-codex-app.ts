@@ -23,6 +23,42 @@ function ensureExists(targetPath: string, label: string): void {
   }
 }
 
+function filesMatch(source: string, destination: string): boolean {
+  if (!fs.existsSync(destination)) return false;
+  const sourceStat = fs.statSync(source);
+  const destinationStat = fs.statSync(destination);
+  return sourceStat.size === destinationStat.size && Math.trunc(sourceStat.mtimeMs) === Math.trunc(destinationStat.mtimeMs);
+}
+
+function copyPathIncremental(source: string, destination: string): void {
+  const sourceStat = fs.statSync(source);
+  if (sourceStat.isDirectory()) {
+    fs.mkdirSync(destination, { recursive: true });
+    for (const entry of fs.readdirSync(source)) {
+      copyPathIncremental(path.join(source, entry), path.join(destination, entry));
+    }
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  if (filesMatch(source, destination)) return;
+
+  try {
+    fs.copyFileSync(source, destination);
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === 'EBUSY' && fs.existsSync(destination)) {
+      const sourceSize = sourceStat.size;
+      const destinationSize = fs.statSync(destination).size;
+      if (sourceSize === destinationSize) {
+        console.warn(`SKIPPED_BUSY: ${path.relative(ROOT, destination)}`);
+        return;
+      }
+    }
+    throw error;
+  }
+}
+
 function ensureCodexRuntimeBuilt(): void {
   const browseDist = path.join(ROOT, 'browse', 'dist');
   const serverNodePath = path.join(browseDist, 'server-node.mjs');
@@ -77,15 +113,13 @@ function ensureCodexRuntimeBuilt(): void {
 function copyEntry(fromRepoPath: string, toRuntimePath: string): void {
   const source = path.join(ROOT, fromRepoPath);
   ensureExists(source, 'runtime source');
-  fs.mkdirSync(path.dirname(toRuntimePath), { recursive: true });
-  fs.cpSync(source, toRuntimePath, { recursive: true, force: true });
+  copyPathIncremental(source, toRuntimePath);
 }
 
 function copyExportEntry(fromExportPath: string, toRuntimePath: string): void {
   const source = path.join(exportRoot, fromExportPath);
   ensureExists(source, 'exported skill source');
-  fs.mkdirSync(path.dirname(toRuntimePath), { recursive: true });
-  fs.cpSync(source, toRuntimePath, { recursive: true, force: true });
+  copyPathIncremental(source, toRuntimePath);
 }
 
 function shouldNormalizeShellScript(filePath: string, content: string): boolean {

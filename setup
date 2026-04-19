@@ -815,6 +815,9 @@ install_codex_local_marketplace() {
   local marketplace_root="$codex_home/local-marketplaces/gstack-local"
   local plugin_root="$marketplace_root/plugins/gstack"
   local marketplace_json="$marketplace_root/.agents/plugins/marketplace.json"
+  local cache_root="$codex_home/plugins/cache/gstack-local/gstack"
+  local marketplace_root_norm
+  local cache_root_norm
 
   mkdir -p "$marketplace_root"
 
@@ -824,6 +827,21 @@ install_codex_local_marketplace() {
       --plugin-root "$plugin_root" \
       --marketplace-path "$marketplace_json"
   )
+
+  marketplace_root_norm="$(normalize_setup_path "$marketplace_root")" || {
+    echo "gstack setup failed: could not normalize Codex marketplace root" >&2
+    exit 1
+  }
+  cache_root_norm="$(normalize_setup_path "$cache_root")" || {
+    echo "gstack setup failed: could not normalize Codex plugin cache root" >&2
+    exit 1
+  }
+  assert_path_within "$marketplace_root_norm" "$codex_home" "Codex marketplace"
+  assert_path_within "$cache_root_norm" "$codex_home" "Codex plugin cache"
+
+  rm -rf "$cache_root_norm"
+  mkdir -p "$(dirname "$cache_root_norm")"
+  cp -R "$plugin_root" "$cache_root_norm"
 
   ensure_codex_marketplace_registered "$codex_home" "$marketplace_root"
 }

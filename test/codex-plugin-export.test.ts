@@ -61,11 +61,15 @@ describe('codex plugin export', () => {
           path: './plugins/gstack',
         },
         policy: {
-          installation: 'AVAILABLE',
+          installation: 'INSTALLED_BY_DEFAULT',
           authentication: 'ON_INSTALL',
         },
         category: 'Coding',
       });
+      expect(pluginManifest.interface.composerIcon).toBe('./assets/composer-icon.png');
+      expect(pluginManifest.interface.logo).toBe('./assets/logo.png');
+      expect(fs.existsSync(path.join(exportPaths.pluginRoot, 'assets', 'composer-icon.png'))).toBe(true);
+      expect(fs.existsSync(path.join(exportPaths.pluginRoot, 'assets', 'logo.png'))).toBe(true);
     } finally {
       exportPaths.cleanup();
     }

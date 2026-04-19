@@ -82,12 +82,21 @@ const exportedSkillRoot = path.join(exportRoot, hostConfig.appExport.skillRoot);
 const exportedRuntimeRoot = path.join(exportRoot, 'runtime');
 const pluginSkillRoot = path.join(pluginRoot, 'skills');
 const pluginRuntimeRoot = path.join(pluginRoot, 'runtime');
+const pluginAssetsRoot = path.join(pluginRoot, 'assets');
 
 ensureExists(exportedSkillRoot, 'Codex app skill export');
 ensureExists(exportedRuntimeRoot, 'Codex app runtime export');
 
 syncDirectory(exportedSkillRoot, pluginSkillRoot);
 syncDirectory(exportedRuntimeRoot, pluginRuntimeRoot);
+
+const extensionIcon48 = path.join(ROOT, 'extension', 'icons', 'icon-48.png');
+const extensionIcon128 = path.join(ROOT, 'extension', 'icons', 'icon-128.png');
+if (fs.existsSync(extensionIcon48) && fs.existsSync(extensionIcon128)) {
+  fs.mkdirSync(pluginAssetsRoot, { recursive: true });
+  fs.copyFileSync(extensionIcon48, path.join(pluginAssetsRoot, 'composer-icon.png'));
+  fs.copyFileSync(extensionIcon128, path.join(pluginAssetsRoot, 'logo.png'));
+}
 
 const pluginManifest = {
   name: 'gstack',
@@ -126,6 +135,9 @@ const pluginManifest = {
       'Plan and ship this feature with gstack.',
     ],
     brandColor: '#111111',
+    composerIcon: './assets/composer-icon.png',
+    logo: './assets/logo.png',
+    screenshots: [],
   },
 };
 
@@ -142,7 +154,7 @@ const marketplace = {
         path: './plugins/gstack',
       },
       policy: {
-        installation: 'AVAILABLE',
+        installation: 'INSTALLED_BY_DEFAULT',
         authentication: 'ON_INSTALL',
       },
       category: 'Coding',
