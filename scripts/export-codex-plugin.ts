@@ -8,15 +8,57 @@ const HOST = 'codex';
 const hostConfig = getHostConfig(HOST);
 const packageJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8'));
 
+function readOption(name: string): string | undefined {
+  const prefix = `--${name}=`;
+  const argv = Array.isArray((globalThis as { Bun?: { argv?: string[] } }).Bun?.argv)
+    ? (globalThis as { Bun?: { argv?: string[] } }).Bun!.argv!
+    : process.argv;
+  const args = argv.slice(2);
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg.startsWith(prefix)) {
+      return arg.slice(prefix.length);
+    }
+    if (arg === `--${name}`) {
+      return args[index + 1];
+    }
+  }
+  return undefined;
+}
+
+function normalizeCliPath(inputPath: string): string {
+  if (/^[A-Za-z]:[\\/]/.test(inputPath)) {
+    return inputPath.replace(/\//g, '\\');
+  }
+
+  if (/^\/[A-Za-z]\//.test(inputPath)) {
+    return `${inputPath[1]}:${inputPath.slice(2)}`.replace(/\//g, '\\');
+  }
+
+  if (/^\/mnt\/[A-Za-z]\//.test(inputPath)) {
+    return `${inputPath[5]}:${inputPath.slice(6)}`.replace(/\//g, '\\');
+  }
+
+  return inputPath;
+}
+
 if (!hostConfig.appExport) {
   throw new Error('Codex host is missing appExport configuration');
 }
 
 const exportRoot = path.join(ROOT, hostConfig.appExport.root);
-const pluginRoot = path.resolve(process.env.GSTACK_CODEX_PLUGIN_ROOT ?? path.join(ROOT, 'plugins', 'gstack'));
+const pluginRoot = path.resolve(
+  normalizeCliPath(
+    readOption('plugin-root') ?? process.env.GSTACK_CODEX_PLUGIN_ROOT ?? path.join(ROOT, 'plugins', 'gstack')
+  )
+);
 const pluginManifestPath = path.join(pluginRoot, '.codex-plugin', 'plugin.json');
 const marketplacePath = path.resolve(
-  process.env.GSTACK_CODEX_MARKETPLACE_PATH ?? path.join(ROOT, '.agents', 'plugins', 'marketplace.json'),
+  normalizeCliPath(
+    readOption('marketplace-path') ??
+      process.env.GSTACK_CODEX_MARKETPLACE_PATH ??
+      path.join(ROOT, '.agents', 'plugins', 'marketplace.json')
+  ),
 );
 
 function ensureExists(targetPath: string, label: string): void {
@@ -32,8 +74,7 @@ function writeJson(targetPath: string, value: unknown): void {
 
 function syncDirectory(source: string, destination: string): void {
   ensureExists(source, 'plugin export source');
-  fs.rmSync(destination, { recursive: true, force: true });
-  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.mkdirSync(destination, { recursive: true });
   fs.cpSync(source, destination, { recursive: true, force: true });
 }
 

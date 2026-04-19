@@ -49,9 +49,7 @@ BROWSE_BIN="$SOURCE_GSTACK_DIR/browse/dist/browse"
 if [ ! -x "$BROWSE_BIN" ] && [ -x "$SOURCE_GSTACK_DIR/browse/dist/browse.exe" ]; then
   BROWSE_BIN="$SOURCE_GSTACK_DIR/browse/dist/browse.exe"
 fi
-CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
-CODEX_SKILLS="${CODEX_SKILLS:-$CODEX_HOME/skills}"
-CODEX_GSTACK="${CODEX_GSTACK:-$CODEX_SKILLS/gstack}"
+CODEX_HOME_DEFAULT="$HOME/.codex"
 FACTORY_SKILLS="$HOME/.factory/skills"
 FACTORY_GSTACK="$FACTORY_SKILLS/gstack"
 OPENCODE_SKILLS="$HOME/.config/opencode/skills"
@@ -61,6 +59,23 @@ IS_WINDOWS=0
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*|Windows_NT) IS_WINDOWS=1 ;;
 esac
+
+if { [ -z "${CODEX_HOME:-}" ] || [ "${CODEX_HOME:-}" = "$HOME/.codex" ]; }; then
+  USERPROFILE_WIN="$(cmd.exe /c echo %USERPROFILE% 2>/dev/null | tr -d '\r')"
+  if [ -n "$USERPROFILE_WIN" ] && [ "$USERPROFILE_WIN" != "%USERPROFILE%" ]; then
+    if command -v cygpath >/dev/null 2>&1; then
+      CODEX_HOME_DEFAULT="$(cygpath -u "$USERPROFILE_WIN")/.codex"
+    elif command -v wslpath >/dev/null 2>&1; then
+      CODEX_HOME_DEFAULT="$(wslpath -u "$USERPROFILE_WIN")/.codex"
+    else
+      CODEX_HOME_DEFAULT="$USERPROFILE_WIN/.codex"
+    fi
+  fi
+fi
+
+CODEX_HOME="${CODEX_HOME:-$CODEX_HOME_DEFAULT}"
+CODEX_SKILLS="${CODEX_SKILLS:-$CODEX_HOME/skills}"
+CODEX_GSTACK="${CODEX_GSTACK:-$CODEX_SKILLS/gstack}"
 
 # â”€â”€â”€ Quiet mode helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 QUIET=0
@@ -739,6 +754,80 @@ install_codex_runtime_bundle() {
   ln -snf "$runtime_bundle" "$codex_gstack"
 }
 
+to_codex_marketplace_source_path() {
+  local target="$1"
+  local win_path=""
+
+  if command -v cygpath >/dev/null 2>&1; then
+    win_path="$(cygpath -w "$target" 2>/dev/null || true)"
+  elif command -v wslpath >/dev/null 2>&1; then
+    win_path="$(wslpath -w "$target" 2>/dev/null || true)"
+  elif [ "$IS_WINDOWS" -eq 1 ]; then
+    win_path="${target//\//\\}"
+  fi
+
+  if [ -n "$win_path" ]; then
+    printf '\\\\?\\%s\n' "${win_path//\//\\}"
+    return 0
+  fi
+
+  printf '%s\n' "$target"
+}
+
+ensure_codex_marketplace_registered() {
+  local codex_home="$1"
+  local marketplace_root="$2"
+  local config_path="$codex_home/config.toml"
+  local source_path
+  local updated_at
+
+  source_path="$(to_codex_marketplace_source_path "$marketplace_root")"
+  updated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  mkdir -p "$codex_home"
+  touch "$config_path"
+  tmp_config="$(mktemp "${TMPDIR:-/tmp}/gstack-codex-config.XXXXXX")"
+
+  awk '
+    BEGIN { skip = 0 }
+    /^\[marketplaces\.gstack-local\]$/ { skip = 1; next }
+    skip && /^\[/ { skip = 0 }
+    !skip { print }
+  ' "$config_path" > "$tmp_config"
+
+  if [ -s "$tmp_config" ]; then
+    printf '\n' >> "$tmp_config"
+  fi
+
+  cat >> "$tmp_config" <<EOF
+[marketplaces.gstack-local]
+last_updated = "$updated_at"
+source_type = "local"
+source = '$source_path'
+EOF
+
+  mv "$tmp_config" "$config_path"
+}
+
+install_codex_local_marketplace() {
+  local gstack_dir="$1"
+  local codex_home="$2"
+  local marketplace_root="$codex_home/local-marketplaces/gstack-local"
+  local plugin_root="$marketplace_root/plugins/gstack"
+  local marketplace_json="$marketplace_root/.agents/plugins/marketplace.json"
+
+  mkdir -p "$marketplace_root"
+
+  (
+    cd "$gstack_dir"
+    bun scripts/export-codex-plugin.ts \
+      --plugin-root "$plugin_root" \
+      --marketplace-path "$marketplace_json"
+  )
+
+  ensure_codex_marketplace_registered "$codex_home" "$marketplace_root"
+}
+
 create_factory_runtime_root() {
   local gstack_dir="$1"
   local factory_gstack="$2"
@@ -976,6 +1065,7 @@ if [ "$INSTALL_CODEX" -eq 1 ]; then
     CODEX_GSTACK="$INSTALL_GSTACK_DIR"
   fi
   mkdir -p "$CODEX_SKILLS"
+  install_codex_local_marketplace "$SOURCE_GSTACK_DIR" "$CODEX_HOME"
 
   # Skip runtime root creation for repo-local installs â€” the checkout IS the runtime root.
   # create_codex_runtime_root would create self-referential symlinks (bin â†’ bin, etc.).

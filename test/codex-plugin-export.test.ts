@@ -80,6 +80,6 @@ describe('codex plugin export', () => {
     expect(rootSkill).toContain('$_GSTACK_PLUGIN_ROOT/runtime/gstack');
     expect(rootSkill).toContain('$_GSTACK_PLUGIN_ROOT/skills');
     expect(rootSkill).toContain('$GSTACK_SKILLS_ROOT/[skill-name]/SKILL.md');
-    expect(rootSkill).toContain('$GSTACK_ROOT/gstack-upgrade/SKILL.md');
+    expect(rootSkill).toContain('$GSTACK_SKILLS_ROOT/gstack-upgrade/SKILL.md');
   });
 });

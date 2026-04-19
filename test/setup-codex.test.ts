@@ -123,6 +123,11 @@ function collectNamedFiles(rootPath: string, fileName: string): string[] {
   return matches.sort();
 }
 
+function collectCrossSkillTargets(skillContent: string): string[] {
+  const matches = skillContent.matchAll(/\$GSTACK_SKILLS_ROOT\/(gstack-[a-z0-9-]+)\/SKILL\.md/g);
+  return [...new Set([...matches].map(match => match[1]))].sort();
+}
+
 describe('setup --host codex', () => {
   test('installs Codex runtime and skills from the .codex-app bundle', () => {
     const tempHome = mkTmpHome();
@@ -149,6 +154,18 @@ describe('setup --host codex', () => {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
       expect(manifest.host).toBe('codex');
       expect(manifest.runtimeRoot).toBe('runtime/gstack');
+      const marketplaceRoot = path.join(codexHome, 'local-marketplaces', 'gstack-local');
+      const pluginManifestPath = path.join(marketplaceRoot, 'plugins', 'gstack', '.codex-plugin', 'plugin.json');
+      const marketplaceManifestPath = path.join(marketplaceRoot, '.agents', 'plugins', 'marketplace.json');
+      const configPath = path.join(codexHome, 'config.toml');
+      expect(fs.existsSync(pluginManifestPath)).toBe(true);
+      expect(fs.existsSync(marketplaceManifestPath)).toBe(true);
+      expect(fs.existsSync(configPath)).toBe(true);
+      const configContent = fs.readFileSync(configPath, 'utf-8');
+      expect(configContent).toContain('[marketplaces.gstack-local]');
+      expect(configContent).toContain('source_type = "local"');
+      expect(configContent).toContain('local-marketplaces');
+      expect(configContent).toContain('gstack-local');
       expect(
         fs.readdirSync(path.join(codexHome, 'skills')).sort()
       ).toEqual(
@@ -192,6 +209,17 @@ describe('setup --host codex', () => {
       const installedReviewDir = path.join(codexHome, 'skills', 'gstack-review');
       const exportedReviewDir = path.join(ROOT, '.codex-app', 'skills', 'gstack-review');
       expect(readShellRealPath(installedReviewDir)).toBe(toShellPath(exportedReviewDir));
+
+      for (const skill of manifest.skills as Array<{ name: string }>) {
+        const exportedSkillPath =
+          skill.name === 'gstack'
+            ? path.join(ROOT, '.codex-app', 'runtime', 'gstack', 'SKILL.md')
+            : path.join(ROOT, '.codex-app', 'skills', skill.name, 'SKILL.md');
+        const content = fs.readFileSync(exportedSkillPath, 'utf-8');
+        for (const targetSkill of collectCrossSkillTargets(content)) {
+          expect(readShellRealPath(path.join(codexHome, 'skills', targetSkill))).not.toBeNull();
+        }
+      }
     } finally {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
