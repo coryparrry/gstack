@@ -221,6 +221,169 @@ policy:
 `;
 }
 
+function adaptAutoplanForCodexApp(content: string): string {
+  content = content.replace(/\r\n/g, '\n');
+
+  const directReplacements: Array<[string | RegExp, string]> = [
+    [
+      '- Read CLAUDE.md, TODOS.md, git log -30, git diff against the base branch --stat',
+      '- Read AGENTS.md if present, TODOS.md, git log -30, git diff against the base branch --stat',
+    ],
+    [/`~\/\.claude\/skills\/gstack\/plan-ceo-review\/SKILL\.md`/g, '`$GSTACK_SKILLS_ROOT/gstack-plan-ceo-review/SKILL.md`'],
+    [/`~\/\.claude\/skills\/gstack\/plan-design-review\/SKILL\.md`/g, '`$GSTACK_SKILLS_ROOT/gstack-plan-design-review/SKILL.md`'],
+    [/`~\/\.claude\/skills\/gstack\/plan-eng-review\/SKILL\.md`/g, '`$GSTACK_SKILLS_ROOT/gstack-plan-eng-review/SKILL.md`'],
+    [/`~\/\.claude\/skills\/gstack\/plan-devex-review\/SKILL\.md`/g, '`$GSTACK_SKILLS_ROOT/gstack-plan-devex-review/SKILL.md`'],
+    [/Read CLAUDE\.md, TODOS\.md, git log -30, git diff against the base branch --stat/g, 'Read AGENTS.md if present, TODOS.md, git log -30, git diff against the base branch --stat'],
+    [/SOURCE = "codex\+subagent", "codex-only", "subagent-only", or "unavailable"\./g, 'SOURCE = "codex-app" or "unavailable".'],
+    [/Follow plan-ceo-review\/SKILL\.md/g, 'Follow `$GSTACK_SKILLS_ROOT/gstack-plan-ceo-review/SKILL.md`'],
+    [/Follow plan-design-review\/SKILL\.md/g, 'Follow `$GSTACK_SKILLS_ROOT/gstack-plan-design-review/SKILL.md`'],
+    [/Follow plan-eng-review\/SKILL\.md/g, 'Follow `$GSTACK_SKILLS_ROOT/gstack-plan-eng-review/SKILL.md`'],
+    [/Follow plan-devex-review\/SKILL\.md/g, 'Follow `$GSTACK_SKILLS_ROOT/gstack-plan-devex-review/SKILL.md`'],
+    [/\| Codex Review \| `\/codex review` \| Independent 2nd opinion \| 0 \| — \| — \|/g, '| App Review | `current session review` | Independent in-app review | 0 | — | — |'],
+  ];
+
+  for (const [pattern, replacement] of directReplacements) {
+    content = content.replace(pattern as never, replacement);
+  }
+
+  content = content.replace(
+    /All prompts sent to Codex \(via `codex exec` or `codex review`\) MUST be prefixed with[\s\S]*?---\n\n## Phase 0\.5:/,
+    `In Codex app mode, do not shell out to external Codex CLI review commands. Continue the review directly in this session and keep repository-focused boundaries in mind.
+
+---
+
+## Phase 0.5:`,
+  );
+
+  content = content.replace(
+    /## Phase 0\.5: Codex auth \+ version preflight[\s\S]*?---\n\n## Phase 1:/,
+    `## Phase 0.5: Codex App Execution Mode
+
+In the Codex app plugin, /autoplan runs in single-reviewer mode. Do not invoke \`codex exec\`,
+\`codex review\`, CLI auth probes, or Claude subagents from inside this skill.
+Review the plan directly in the current Codex app session and continue through the phases below.
+
+Read AGENTS.md if present, TODOS.md, recent git history, and the current plan context.
+
+Treat any instruction that assumes an external Codex CLI or a Claude subagent as replaced by:
+- continue the review in this Codex app session
+- write the required output directly to the plan file
+- note any unavailable external voice as \`[not used in Codex app mode]\`
+
+---
+
+## Phase 1:`,
+  );
+
+  content = content.replace(
+    /# Vendoring deprecation: detect if CWD has a vendored gstack copy[\s\S]*?echo "VENDORED_GSTACK: [^"\n]*"\n/,
+    '',
+  );
+
+  content = content.replace(
+    /If `VENDORED_GSTACK` is `yes`:[\s\S]*?(?=If `SPAWNED_SESSION` is `"true"`)/,
+    '',
+  );
+
+  const phaseBlocks: Array<{ start: RegExp; end: string; replacement: string }> = [
+    {
+      start: /- Dual voices: always run BOTH Claude subagent AND Codex if available \(P6\)\.[\s\S]*?(?=- Strategy choices:)/,
+      end: '- Strategy choices:',
+      replacement: `- Single-reviewer mode: in the Codex app, run this phase directly in the current session. Do not invoke Codex CLI commands or Claude subagents.\n\n`,
+    },
+    {
+      start: /- Dual voices: always run BOTH Claude subagent AND Codex if available \(P6\)\.[\s\S]*?(?=- Design choices:)/,
+      end: '- Design choices:',
+      replacement: `- Single-reviewer mode: in the Codex app, run this phase directly in the current session. Do not invoke Codex CLI commands or Claude subagents.\n\n`,
+    },
+    {
+      start: /- Dual voices: always run BOTH Claude subagent AND Codex if available \(P6\)\.[\s\S]*?(?=- Architecture choices:)/,
+      end: '- Architecture choices:',
+      replacement: `- Single-reviewer mode: in the Codex app, run this phase directly in the current session. Do not invoke Codex CLI commands or Claude subagents.\n\n`,
+    },
+    {
+      start: /- Dual voices: always run BOTH Claude subagent AND Codex if available \(P6\)\.[\s\S]*?(?=- DX choices:)/,
+      end: '- DX choices:',
+      replacement: `- Single-reviewer mode: in the Codex app, run this phase directly in the current session. Do not invoke Codex CLI commands or Claude subagents.\n\n`,
+    },
+  ];
+
+  for (const { start, replacement } of phaseBlocks) {
+    content = content.replace(start, replacement);
+  }
+
+  const stepReplacements: Array<[RegExp, string]> = [
+    [
+      /Step 0\.5 \(Dual Voices\):[\s\S]*?(?=Sections 1-10)/,
+      `Step 0.5 (Codex app execution): Continue the CEO review directly in this Codex app session. Do not build a dual-voice consensus table in Codex app mode.\n\n`,
+    ],
+    [
+      /2\. Step 0\.5 \(Dual Voices\):[\s\S]*?(?=3\. Passes 1-7)/,
+      `2. Step 0.5 (Codex app execution): Continue the design review directly in this Codex app session. Do not build a dual-voice consensus table in Codex app mode.\n\n`,
+    ],
+    [
+      /2\. Step 0\.5 \(Dual Voices\):[\s\S]*?(?=3\. Section 1 \(Architecture\))/,
+      `2. Step 0.5 (Codex app execution): Continue the engineering review directly in this Codex app session. Do not build a dual-voice consensus table in Codex app mode.\n\n`,
+    ],
+    [
+      /2\. Step 0\.5 \(Dual Voices\):[\s\S]*?(?=3\. Passes 1-8)/,
+      `2. Step 0.5 (Codex app execution): Continue the DX review directly in this Codex app session. Do not build a dual-voice consensus table in Codex app mode.\n\n`,
+    ],
+  ];
+
+  for (const [pattern, replacement] of stepReplacements) {
+    content = content.replace(pattern, replacement);
+  }
+
+  const phaseSummaryReplacements: Array<[RegExp, string]> = [
+    [/>\s+\*\*Phase 1 complete\.\*\*[\s\S]*?Passing to Phase 2\./, '> **Phase 1 complete.** Review findings written to the plan file. Passing to Phase 2.'],
+    [/>\s+\*\*Phase 2 complete\.\*\*[\s\S]*?Passing to Phase 3\./, '> **Phase 2 complete.** Review findings written to the plan file. Passing to Phase 3.'],
+    [/>\s+\*\*Phase 3 complete\.\*\*[\s\S]*?Passing to Phase 3\.5 \(DX Review\) or Phase 4 \(Final Gate\)\./, '> **Phase 3 complete.** Review findings written to the plan file. Passing to Phase 3.5 (DX Review) or Phase 4 (Final Gate).'],
+    [/>\s+\*\*Phase 3\.5 complete\.\*\*[\s\S]*?Passing to Phase 4 \(Final Gate\)\./, '> **Phase 3.5 complete.** Review findings written to the plan file. Passing to Phase 4 (Final Gate).'],
+  ];
+
+  for (const [pattern, replacement] of phaseSummaryReplacements) {
+    content = content.replace(pattern, replacement);
+  }
+
+  content = content
+    .replace(/`codex exec` \/ `codex review` \(outside voice, plan review, adversarial challenge\)/g, 'the current Codex app session for plan review')
+    .replace(/`codex exec` or `codex review`/g, 'the current Codex app session')
+    .replace(/`codex exec`/g, 'the current Codex app session')
+    .replace(/`codex review`/g, 'the current Codex app session')
+    .replace(/\/codex review/g, 'current session review')
+    .replace(/command -v codex/g, 'false')
+    .replace(/`codex login`/g, 'the Codex app sign-in flow')
+    .replace(/## Phase 3: Eng Review \+ Dual Voices/g, '## Phase 3: Eng Review')
+    .replace(/^.*codex login.*\n/gm, '')
+    .replace(/^.*command -v codex.*\n/gm, '')
+    .replace(/^.*_gstack_codex_auth_probe.*\n/gm, '')
+    .replace(/^.*_gstack_codex_version_check.*\n/gm, '')
+    .replace(/^.*_gstack_codex_timeout_wrapper.*\n/gm, '')
+    .replace(/^.*codex-unavailable.*\n/gm, '')
+    .replace(/^.*CLI versions.*\n/gm, '')
+    .replace(/^.*external Codex CLI.*\n/gm, '')
+    .replace(/Claude subagent/g, 'current Codex app review')
+    .replace(/CLAUDE SUBAGENT/g, 'CURRENT CODEX APP REVIEW')
+    .replace(/CEO DUAL VOICES/g, 'CEO REVIEW')
+    .replace(/ENG DUAL VOICES/g, 'ENG REVIEW')
+    .replace(/DX DUAL VOICES/g, 'DX REVIEW')
+    .replace(/^.*dual voices.*\n/gm, '')
+    .replace(/^.*consensus table.*\n/gm, '')
+    .replace(/^.*consensus scorecard.*\n/gm, '')
+    .replace(/^.*Codex: \[N concerns\].*\n/gm, '')
+    .replace(/^.*Consensus: \[X.*\n/gm, '')
+    .replace(/^.*current Codex app review only.*\n/gm, '')
+    .replace(/^.*Proceeding with current Codex app review only.*\n/gm, '')
+    .replace(/- CEO Voices: Codex \[summary\], Claude subagent \[summary\], Consensus \[X\/6 confirmed\]\n/g, '')
+    .replace(/- Design Voices: Codex \[summary\], Claude subagent \[summary\], Consensus \[X\/7 confirmed\] \(or "skipped"\)\n/g, '')
+    .replace(/- Eng Voices: Codex \[summary\], Claude subagent \[summary\], Consensus \[X\/6 confirmed\]\n/g, '')
+    .replace(/- DX Voices: Codex \[summary\], Claude subagent \[summary\], Consensus \[X\/6 confirmed\] \(or "skipped"\)\n/g, '')
+    .replace(/\n{3,}/g, '\n\n');
+
+  return content;
+}
+
 interface AppExportSkill {
   name: string;
   skillPath: string;
@@ -633,6 +796,10 @@ function processTemplate(tmplPath: string, host: Host = 'claude'): { outputPath:
     content = result.content;
     outputPath = result.outputPath;
     symlinkLoop = result.symlinkLoop;
+  }
+
+  if (host === 'codex' && skillName === 'autoplan') {
+    content = adaptAutoplanForCodexApp(content);
   }
 
   // Prepend generated header (after frontmatter)

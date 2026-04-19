@@ -1904,6 +1904,31 @@ describe('Codex generation (--host codex)', () => {
     }
   });
 
+  test('Codex autoplan strips CLI and Claude-subagent assumptions', () => {
+    const paths = [
+      path.join(AGENTS_DIR, 'gstack-autoplan', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack-autoplan', 'SKILL.md'),
+    ];
+
+    for (const skillPath of paths) {
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toContain('## Phase 0.5: Codex App Execution Mode');
+      expect(content).toContain('Read AGENTS.md if present, TODOS.md');
+      expect(content).not.toContain('Read CLAUDE.md, TODOS.md');
+      expect(content).not.toContain('codex exec');
+      expect(content).not.toContain('codex review');
+      expect(content).not.toContain('command -v codex');
+      expect(content).not.toContain('codex login');
+      expect(content).not.toContain('Claude subagent');
+      expect(content).not.toContain('CLAUDE SUBAGENT');
+      expect(content).not.toContain('CEO DUAL VOICES');
+      expect(content).not.toContain('ENG DUAL VOICES');
+      expect(content).not.toContain('DX DUAL VOICES');
+      expect(content).not.toContain('~/.claude/skills/gstack/bin/gstack-review-log');
+      expect(content).toContain('$GSTACK_ROOT/bin/gstack-review-log');
+    }
+  });
+
   test('Codex upgrade handoff reads gstack-upgrade from the shared skill root', () => {
     const paths = [
       path.join(AGENTS_DIR, 'gstack', 'SKILL.md'),
