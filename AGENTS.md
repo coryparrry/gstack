@@ -62,7 +62,7 @@ bun run skill:check      # health dashboard for all skills
 
 ## Subagent Use
 
-For non-trivial engineering work, use `$agent-team-orchestrator` at `C:\Users\coryp\.codex\skills\agent-team-orchestrator` to decide when and how to delegate.
+For non-trivial engineering work, use the available `$agent-team-orchestrator` skill to decide when and how to delegate.
 
 Apply these rules:
 - Keep the main agent on the critical path. The main agent owns user communication, synthesis, final decisions, and any immediate blocking step.

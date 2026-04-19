@@ -15,8 +15,8 @@ This plan is intentionally execution-oriented:
 
 ## Source Inputs
 
-- [CODEX_COMPATIBILITY_AUDIT_2026-04-18.md](C:/Users/coryp/Documents/gstack-codex-plugin/docs/designs/CODEX_COMPATIBILITY_AUDIT_2026-04-18.md)
-- [CODEX_PORT_HANDOFF_2026-04-18.md](C:/Users/coryp/Documents/gstack-codex-plugin/docs/designs/CODEX_PORT_HANDOFF_2026-04-18.md)
+- [CODEX_COMPATIBILITY_AUDIT_2026-04-18.md](./CODEX_COMPATIBILITY_AUDIT_2026-04-18.md)
+- [CODEX_PORT_HANDOFF_2026-04-18.md](./CODEX_PORT_HANDOFF_2026-04-18.md)
 
 ## Delivery Strategy
 
