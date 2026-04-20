@@ -8,7 +8,6 @@ description: |
   Compares before/after on every PR. Tracks performance trends over time.
   Use when: "performance", "benchmark", "page speed", "lighthouse", "web vitals",
   "bundle size", "load time". (gstack)
-  Voice triggers (speech-to-text aliases): "speed test", "check performance".
 triggers:
   - performance benchmark
   - check page speed
@@ -468,7 +467,7 @@ plan's living status.
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 B=""
 [ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/gstack/browse/dist/browse" ] && B="$_ROOT/.claude/skills/gstack/browse/dist/browse"
-[ -z "$B" ] && B="$HOME/.claude/skills/gstack/browse/dist/browse"
+[ -z "$B" ] && B="~/.claude/skills/gstack/browse/dist/browse"
 if [ -x "$B" ]; then
   echo "READY: $B"
 else

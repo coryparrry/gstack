@@ -8,7 +8,6 @@ description: |
   gets its own tab with scoped access (read+write by default, admin on request).
   Use when asked to "pair agent", "connect agent", "share browser", "remote browser",
   "let another agent use my browser", or "give browser access". (gstack)
-  Voice triggers (speech-to-text aliases): "pair agent", "connect agent", "share my browser", "remote browser access".
 triggers:
   - pair with agent
   - connect remote agent
@@ -761,7 +760,7 @@ The skill will tell you if one is needed and how to set it up.
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 B=""
 [ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/gstack/browse/dist/browse" ] && B="$_ROOT/.claude/skills/gstack/browse/dist/browse"
-[ -z "$B" ] && B="$HOME/.claude/skills/gstack/browse/dist/browse"
+[ -z "$B" ] && B="~/.claude/skills/gstack/browse/dist/browse"
 if [ -x "$B" ]; then
   echo "READY: $B"
 else
