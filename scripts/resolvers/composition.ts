@@ -1,4 +1,5 @@
 import type { TemplateContext } from './types';
+import { externalSkillName } from './codex-helpers';
 
 /**
  * {{INVOKE_SKILL:skill-name}} — emits prose instructing Claude to read
@@ -12,6 +13,7 @@ export function generateInvokeSkill(ctx: TemplateContext, args?: string[]): stri
   if (!skillName || skillName === '') {
     throw new Error('{{INVOKE_SKILL}} requires a skill name, e.g. {{INVOKE_SKILL:plan-ceo-review}}');
   }
+  const targetSkillName = ctx.host === 'claude' ? skillName : externalSkillName(skillName);
 
   // Parse optional skip= parameter from args[1+]
   const extraSkips = (args?.slice(1) || [])
@@ -37,7 +39,7 @@ export function generateInvokeSkill(ctx: TemplateContext, args?: string[]): stri
 
   const allSkips = [...DEFAULT_SKIPS, ...extraSkips];
 
-  return `Read the \`/${skillName}\` skill file at \`${ctx.paths.skillRoot}/${skillName}/SKILL.md\` using the Read tool.
+  return `Read the \`/${skillName}\` skill file at \`${ctx.paths.skillRoot}/${targetSkillName}/SKILL.md\` using the Read tool.
 
 **If unreadable:** Skip with "Could not load /${skillName} — skipping." and continue.
 

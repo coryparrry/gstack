@@ -97,13 +97,21 @@ function externalSkillName(skillDir: string, frontmatterName?: string): string {
   return `gstack-${baseName}`;
 }
 
-function extractNameAndDescription(content: string): { name: string; description: string } {
-  const fmStart = content.indexOf('---\n');
-  if (fmStart !== 0) return { name: '', description: '' };
-  const fmEnd = content.indexOf('\n---', fmStart + 4);
-  if (fmEnd === -1) return { name: '', description: '' };
+function parseFrontmatter(content: string): { frontmatter: string; body: string } | null {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return null;
 
-  const frontmatter = content.slice(fmStart + 4, fmEnd);
+  return {
+    frontmatter: match[1].replace(/\r\n/g, '\n'),
+    body: content.slice(match[0].length),
+  };
+}
+
+function extractNameAndDescription(content: string): { name: string; description: string } {
+  const parsed = parseFrontmatter(content);
+  if (!parsed) return { name: '', description: '' };
+
+  const { frontmatter } = parsed;
   const nameMatch = frontmatter.match(/^name:\s*(.+)$/m);
   const name = nameMatch ? nameMatch[1].trim() : '';
 
@@ -142,11 +150,9 @@ function extractNameAndDescription(content: string): { name: string; description
  * Returns an array of trigger strings, or [] if no voice-triggers field.
  */
 function extractVoiceTriggers(content: string): string[] {
-  const fmStart = content.indexOf('---\n');
-  if (fmStart !== 0) return [];
-  const fmEnd = content.indexOf('\n---', fmStart + 4);
-  if (fmEnd === -1) return [];
-  const frontmatter = content.slice(fmStart + 4, fmEnd);
+  const parsed = parseFrontmatter(content);
+  if (!parsed) return [];
+  const { frontmatter } = parsed;
 
   const triggers: string[] = [];
   let inVoice = false;
@@ -171,7 +177,7 @@ function processVoiceTriggers(content: string): string {
   if (triggers.length === 0) return content;
 
   // Strip voice-triggers block from frontmatter
-  content = content.replace(/^voice-triggers:\n(?:\s+-\s+"[^"]*"\n?)*/m, '');
+  content = content.replace(/^voice-triggers:\r?\n(?:\s+-\s+"[^"]*"\r?\n?)*/m, '');
 
   // Get current description (after stripping voice-triggers, so it's clean)
   const { description } = extractNameAndDescription(content);
@@ -182,8 +188,8 @@ function processVoiceTriggers(content: string): string {
   const newDescription = description + '\n' + voiceLine;
 
   // Replace old indented description with new in frontmatter
-  const oldIndented = description.split('\n').map(l => `  ${l}`).join('\n');
-  const newIndented = newDescription.split('\n').map(l => `  ${l}`).join('\n');
+  const oldIndented = description.split(/\r?\n/).map(l => `  ${l}`).join('\n');
+  const newIndented = newDescription.split(/\r?\n/).map(l => `  ${l}`).join('\n');
   content = content.replace(oldIndented, newIndented);
 
   return content;
@@ -215,6 +221,338 @@ policy:
 `;
 }
 
+function adaptAutoplanForCodexApp(content: string): string {
+  content = content.replace(/\r\n/g, '\n');
+
+  const directReplacements: Array<[string | RegExp, string]> = [
+    [
+      '- Read CLAUDE.md, TODOS.md, git log -30, git diff against the base branch --stat',
+      '- Read AGENTS.md if present, TODOS.md, git log -30, git diff against the base branch --stat',
+    ],
+    [/`~\/\.claude\/skills\/gstack\/plan-ceo-review\/SKILL\.md`/g, '`$GSTACK_SKILLS_ROOT/gstack-plan-ceo-review/SKILL.md`'],
+    [/`~\/\.claude\/skills\/gstack\/plan-design-review\/SKILL\.md`/g, '`$GSTACK_SKILLS_ROOT/gstack-plan-design-review/SKILL.md`'],
+    [/`~\/\.claude\/skills\/gstack\/plan-eng-review\/SKILL\.md`/g, '`$GSTACK_SKILLS_ROOT/gstack-plan-eng-review/SKILL.md`'],
+    [/`~\/\.claude\/skills\/gstack\/plan-devex-review\/SKILL\.md`/g, '`$GSTACK_SKILLS_ROOT/gstack-plan-devex-review/SKILL.md`'],
+    [/Read CLAUDE\.md, TODOS\.md, git log -30, git diff against the base branch --stat/g, 'Read AGENTS.md if present, TODOS.md, git log -30, git diff against the base branch --stat'],
+    [/SOURCE = "codex\+subagent", "codex-only", "subagent-only", or "unavailable"\./g, 'SOURCE = "codex-app" or "unavailable".'],
+    [/Follow plan-ceo-review\/SKILL\.md/g, 'Follow `$GSTACK_SKILLS_ROOT/gstack-plan-ceo-review/SKILL.md`'],
+    [/Follow plan-design-review\/SKILL\.md/g, 'Follow `$GSTACK_SKILLS_ROOT/gstack-plan-design-review/SKILL.md`'],
+    [/Follow plan-eng-review\/SKILL\.md/g, 'Follow `$GSTACK_SKILLS_ROOT/gstack-plan-eng-review/SKILL.md`'],
+    [/Follow plan-devex-review\/SKILL\.md/g, 'Follow `$GSTACK_SKILLS_ROOT/gstack-plan-devex-review/SKILL.md`'],
+    [/\| Codex Review \| `\/codex review` \| Independent 2nd opinion \| 0 \| — \| — \|/g, '| App Review | `current session review` | Independent in-app review | 0 | — | — |'],
+  ];
+
+  for (const [pattern, replacement] of directReplacements) {
+    content = content.replace(pattern as never, replacement);
+  }
+
+  content = content.replace(
+    /All prompts sent to Codex \(via `codex exec` or `codex review`\) MUST be prefixed with[\s\S]*?---\n\n## Phase 0\.5:/,
+    `In Codex app mode, do not shell out to external Codex CLI review commands. Continue the review directly in this session and keep repository-focused boundaries in mind.
+
+---
+
+## Phase 0.5:`,
+  );
+
+  content = content.replace(
+    /## Phase 0\.5: Codex auth \+ version preflight[\s\S]*?---\n\n## Phase 1:/,
+    `## Phase 0.5: Codex App Execution Mode
+
+In the Codex app plugin, /autoplan runs in single-reviewer mode. Do not invoke \`codex exec\`,
+\`codex review\`, CLI auth probes, or Claude subagents from inside this skill.
+Review the plan directly in the current Codex app session and continue through the phases below.
+
+Read AGENTS.md if present, TODOS.md, recent git history, and the current plan context.
+
+Treat any instruction that assumes an external Codex CLI or a Claude subagent as replaced by:
+- continue the review in this Codex app session
+- write the required output directly to the plan file
+- note any unavailable external voice as \`[not used in Codex app mode]\`
+
+---
+
+## Phase 1:`,
+  );
+
+  content = content.replace(
+    /# Vendoring deprecation: detect if CWD has a vendored gstack copy[\s\S]*?echo "VENDORED_GSTACK: [^"\n]*"\n/,
+    '',
+  );
+
+  content = content.replace(
+    /If `VENDORED_GSTACK` is `yes`:[\s\S]*?(?=If `SPAWNED_SESSION` is `"true"`)/,
+    '',
+  );
+
+  const phaseBlocks: Array<{ start: RegExp; end: string; replacement: string }> = [
+    {
+      start: /- Dual voices: always run BOTH Claude subagent AND Codex if available \(P6\)\.[\s\S]*?(?=- Strategy choices:)/,
+      end: '- Strategy choices:',
+      replacement: `- Single-reviewer mode: in the Codex app, run this phase directly in the current session. Do not invoke Codex CLI commands or Claude subagents.\n\n`,
+    },
+    {
+      start: /- Dual voices: always run BOTH Claude subagent AND Codex if available \(P6\)\.[\s\S]*?(?=- Design choices:)/,
+      end: '- Design choices:',
+      replacement: `- Single-reviewer mode: in the Codex app, run this phase directly in the current session. Do not invoke Codex CLI commands or Claude subagents.\n\n`,
+    },
+    {
+      start: /- Dual voices: always run BOTH Claude subagent AND Codex if available \(P6\)\.[\s\S]*?(?=- Architecture choices:)/,
+      end: '- Architecture choices:',
+      replacement: `- Single-reviewer mode: in the Codex app, run this phase directly in the current session. Do not invoke Codex CLI commands or Claude subagents.\n\n`,
+    },
+    {
+      start: /- Dual voices: always run BOTH Claude subagent AND Codex if available \(P6\)\.[\s\S]*?(?=- DX choices:)/,
+      end: '- DX choices:',
+      replacement: `- Single-reviewer mode: in the Codex app, run this phase directly in the current session. Do not invoke Codex CLI commands or Claude subagents.\n\n`,
+    },
+  ];
+
+  for (const { start, replacement } of phaseBlocks) {
+    content = content.replace(start, replacement);
+  }
+
+  const stepReplacements: Array<[RegExp, string]> = [
+    [
+      /Step 0\.5 \(Dual Voices\):[\s\S]*?(?=Sections 1-10)/,
+      `Step 0.5 (Codex app execution): Continue the CEO review directly in this Codex app session. Do not build a dual-voice consensus table in Codex app mode.\n\n`,
+    ],
+    [
+      /2\. Step 0\.5 \(Dual Voices\):[\s\S]*?(?=3\. Passes 1-7)/,
+      `2. Step 0.5 (Codex app execution): Continue the design review directly in this Codex app session. Do not build a dual-voice consensus table in Codex app mode.\n\n`,
+    ],
+    [
+      /2\. Step 0\.5 \(Dual Voices\):[\s\S]*?(?=3\. Section 1 \(Architecture\))/,
+      `2. Step 0.5 (Codex app execution): Continue the engineering review directly in this Codex app session. Do not build a dual-voice consensus table in Codex app mode.\n\n`,
+    ],
+    [
+      /2\. Step 0\.5 \(Dual Voices\):[\s\S]*?(?=3\. Passes 1-8)/,
+      `2. Step 0.5 (Codex app execution): Continue the DX review directly in this Codex app session. Do not build a dual-voice consensus table in Codex app mode.\n\n`,
+    ],
+  ];
+
+  for (const [pattern, replacement] of stepReplacements) {
+    content = content.replace(pattern, replacement);
+  }
+
+  const phaseSummaryReplacements: Array<[RegExp, string]> = [
+    [/>\s+\*\*Phase 1 complete\.\*\*[\s\S]*?Passing to Phase 2\./, '> **Phase 1 complete.** Review findings written to the plan file. Passing to Phase 2.'],
+    [/>\s+\*\*Phase 2 complete\.\*\*[\s\S]*?Passing to Phase 3\./, '> **Phase 2 complete.** Review findings written to the plan file. Passing to Phase 3.'],
+    [/>\s+\*\*Phase 3 complete\.\*\*[\s\S]*?Passing to Phase 3\.5 \(DX Review\) or Phase 4 \(Final Gate\)\./, '> **Phase 3 complete.** Review findings written to the plan file. Passing to Phase 3.5 (DX Review) or Phase 4 (Final Gate).'],
+    [/>\s+\*\*Phase 3\.5 complete\.\*\*[\s\S]*?Passing to Phase 4 \(Final Gate\)\./, '> **Phase 3.5 complete.** Review findings written to the plan file. Passing to Phase 4 (Final Gate).'],
+  ];
+
+  for (const [pattern, replacement] of phaseSummaryReplacements) {
+    content = content.replace(pattern, replacement);
+  }
+
+  content = content
+    .replace(/`codex exec` \/ `codex review` \(outside voice, plan review, adversarial challenge\)/g, 'the current Codex app session for plan review')
+    .replace(/`codex exec` or `codex review`/g, 'the current Codex app session')
+    .replace(/`codex exec`/g, 'the current Codex app session')
+    .replace(/`codex review`/g, 'the current Codex app session')
+    .replace(/\/codex review/g, 'current session review')
+    .replace(/command -v codex/g, 'false')
+    .replace(/`codex login`/g, 'the Codex app sign-in flow')
+    .replace(/## Phase 3: Eng Review \+ Dual Voices/g, '## Phase 3: Eng Review')
+    .replace(/^.*codex login.*\n/gm, '')
+    .replace(/^.*command -v codex.*\n/gm, '')
+    .replace(/^.*_gstack_codex_auth_probe.*\n/gm, '')
+    .replace(/^.*_gstack_codex_version_check.*\n/gm, '')
+    .replace(/^.*_gstack_codex_timeout_wrapper.*\n/gm, '')
+    .replace(/^.*codex-unavailable.*\n/gm, '')
+    .replace(/^.*CLI versions.*\n/gm, '')
+    .replace(/^.*external Codex CLI.*\n/gm, '')
+    .replace(/Claude subagent/g, 'current Codex app review')
+    .replace(/CLAUDE SUBAGENT/g, 'CURRENT CODEX APP REVIEW')
+    .replace(/CEO DUAL VOICES/g, 'CEO REVIEW')
+    .replace(/ENG DUAL VOICES/g, 'ENG REVIEW')
+    .replace(/DX DUAL VOICES/g, 'DX REVIEW')
+    .replace(/^.*dual voices.*\n/gm, '')
+    .replace(/^.*consensus table.*\n/gm, '')
+    .replace(/^.*consensus scorecard.*\n/gm, '')
+    .replace(/^.*Codex: \[N concerns\].*\n/gm, '')
+    .replace(/^.*Consensus: \[X.*\n/gm, '')
+    .replace(/^.*current Codex app review only.*\n/gm, '')
+    .replace(/^.*Proceeding with current Codex app review only.*\n/gm, '')
+    .replace(/- CEO Voices: Codex \[summary\], Claude subagent \[summary\], Consensus \[X\/6 confirmed\]\n/g, '')
+    .replace(/- Design Voices: Codex \[summary\], Claude subagent \[summary\], Consensus \[X\/7 confirmed\] \(or "skipped"\)\n/g, '')
+    .replace(/- Eng Voices: Codex \[summary\], Claude subagent \[summary\], Consensus \[X\/6 confirmed\]\n/g, '')
+    .replace(/- DX Voices: Codex \[summary\], Claude subagent \[summary\], Consensus \[X\/6 confirmed\] \(or "skipped"\)\n/g, '')
+    .replace(/\n{3,}/g, '\n\n');
+
+  return content;
+}
+
+function adaptGeneratedContentForCodexApp(content: string): string {
+  return content
+    .replace(/\r\n/g, '\n')
+    .replace(/CLAUDE\.md/g, 'AGENTS.md')
+    .replace(/`codex exec` \/ `codex review`/g, 'the current Codex app session')
+    .replace(/`codex exec` or `codex review`/g, 'the current Codex app session')
+    .replace(/`codex exec`/g, 'the current Codex app session')
+    .replace(/`codex review`/g, 'the current Codex app session')
+    .replace(/\bcodex exec\b/g, 'continue this review in the current Codex app session')
+    .replace(/\bcodex review\b/g, 'current session review')
+    .replace(/\/codex review/g, 'current session review')
+    .replace(/Codex Review/g, 'App Review')
+    .replace(/Codex reviews/g, 'in-app reviews')
+    .replace(/both Claude and Codex reviews exist/g, 'multiple review passes exist')
+    .replace(/CEO, Design, and Codex reviews/g, 'CEO, Design, and in-app review context')
+    .replace(/User asks for a second opinion, current session review → invoke `\/codex`/g, 'User asks for a second opinion → continue in the current Codex app session')
+    .replace(/codex login/g, 'Codex app sign-in')
+    .replace(/Claude subagent/g, 'current Codex app review')
+    .replace(/CLAUDE SUBAGENT/g, 'CURRENT CODEX APP REVIEW')
+    .replace(/Claude Code/g, 'Codex app')
+    .replace(/Agent tool/g, 'subagent')
+    .replace(/Grep tool/g, 'grep search')
+    .replace(/^.*continue this review in the current Codex app session ".*$\n?/gm, '')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
+interface AppExportSkill {
+  name: string;
+  skillPath: string;
+  metadataPath: string | null;
+}
+
+interface AppExportWriteResult {
+  skill: AppExportSkill;
+  stale: boolean;
+}
+
+function listRuntimeBundleAssets(hostConfig: HostConfig): string[] {
+  const assets = ['SKILL.md', 'agents/openai.yaml'];
+
+  for (const link of hostConfig.runtimeRoot.globalSymlinks) {
+    assets.push(link);
+  }
+
+  if (hostConfig.runtimeRoot.globalFiles) {
+    for (const [dir, files] of Object.entries(hostConfig.runtimeRoot.globalFiles)) {
+      for (const file of files) {
+        assets.push(`${dir}/${file}`);
+      }
+    }
+  }
+
+  return [...new Set(assets)].sort();
+}
+
+function writeAppExportSkill(
+  host: Host,
+  skillName: string,
+  content: string,
+  metadataContent: string | null,
+): AppExportWriteResult | null {
+  const hostConfig = getHostConfig(host);
+  if (!hostConfig.appExport) return null;
+
+  const exportRoot = path.join(ROOT, hostConfig.appExport.root);
+  const skillDir = path.join(exportRoot, hostConfig.appExport.skillRoot, skillName);
+  const skillPath = path.join(skillDir, 'SKILL.md');
+  let metadataPath: string | null = null;
+  let stale = false;
+
+  if (DRY_RUN) {
+    const existingSkill = fs.existsSync(skillPath) ? fs.readFileSync(skillPath, 'utf-8') : '';
+    if (existingSkill !== content) {
+      console.log(`STALE: ${path.relative(ROOT, skillPath).replace(/\\/g, '/')}`);
+      stale = true;
+    } else {
+      console.log(`FRESH: ${path.relative(ROOT, skillPath).replace(/\\/g, '/')}`);
+    }
+  } else {
+    fs.mkdirSync(skillDir, { recursive: true });
+    const existingSkill = fs.existsSync(skillPath) ? fs.readFileSync(skillPath, 'utf-8') : null;
+    if (existingSkill !== content) {
+      fs.writeFileSync(skillPath, content);
+    }
+  }
+
+  if (metadataContent) {
+    metadataPath = path.join(skillDir, 'agents', 'openai.yaml');
+    if (DRY_RUN) {
+      const existingMetadata = fs.existsSync(metadataPath) ? fs.readFileSync(metadataPath, 'utf-8') : '';
+      if (existingMetadata !== metadataContent) {
+        console.log(`STALE: ${path.relative(ROOT, metadataPath).replace(/\\/g, '/')}`);
+        stale = true;
+      } else {
+        console.log(`FRESH: ${path.relative(ROOT, metadataPath).replace(/\\/g, '/')}`);
+      }
+    } else {
+      const agentsDir = path.join(skillDir, 'agents');
+      fs.mkdirSync(agentsDir, { recursive: true });
+      const existingMetadata = fs.existsSync(metadataPath) ? fs.readFileSync(metadataPath, 'utf-8') : null;
+      if (existingMetadata !== metadataContent) {
+        fs.writeFileSync(metadataPath, metadataContent);
+      }
+    }
+  }
+
+  return {
+    skill: {
+      name: skillName,
+      skillPath: path.relative(exportRoot, skillPath).replace(/\\/g, '/'),
+      metadataPath: metadataPath ? path.relative(exportRoot, metadataPath).replace(/\\/g, '/') : null,
+    },
+    stale,
+  };
+}
+
+function writeAppExportManifest(host: Host, skills: AppExportSkill[]): boolean {
+  const hostConfig = getHostConfig(host);
+  if (!hostConfig.appExport) return false;
+
+  const exportRoot = path.join(ROOT, hostConfig.appExport.root);
+
+  const manifest = {
+    schemaVersion: 1,
+    host,
+    skillRoot: hostConfig.appExport.skillRoot,
+    runtimeRoot: hostConfig.appExport.runtimeRoot,
+    rootBundle: {
+      name: 'gstack',
+      path: `${hostConfig.appExport.skillRoot}/gstack/SKILL.md`,
+      metadataPath: `${hostConfig.appExport.skillRoot}/gstack/agents/openai.yaml`,
+    },
+    runtimeBundle: {
+      path: hostConfig.appExport.runtimeRoot,
+      skillPath: `${hostConfig.appExport.runtimeRoot}/SKILL.md`,
+      metadataPath: `${hostConfig.appExport.runtimeRoot}/agents/openai.yaml`,
+      assets: listRuntimeBundleAssets(hostConfig),
+    },
+    runtime: {
+      globalRoot: hostConfig.globalRoot,
+      localSkillRoot: hostConfig.localSkillRoot,
+      usesEnvVars: hostConfig.usesEnvVars,
+      runtimeRoot: hostConfig.runtimeRoot,
+      sidecar: hostConfig.sidecar ?? null,
+    },
+    skills: [...skills].sort((a, b) => a.name.localeCompare(b.name)),
+  };
+
+  const manifestPath = path.join(exportRoot, hostConfig.appExport.manifestFile);
+  const manifestContent = JSON.stringify(manifest, null, 2) + '\n';
+
+  if (DRY_RUN) {
+    const existingManifest = fs.existsSync(manifestPath) ? fs.readFileSync(manifestPath, 'utf-8') : '';
+    if (existingManifest !== manifestContent) {
+      console.log(`STALE: ${path.relative(ROOT, manifestPath).replace(/\\/g, '/')}`);
+      return true;
+    }
+    console.log(`FRESH: ${path.relative(ROOT, manifestPath).replace(/\\/g, '/')}`);
+    return false;
+  }
+
+  fs.mkdirSync(exportRoot, { recursive: true });
+  const existingManifest = fs.existsSync(manifestPath) ? fs.readFileSync(manifestPath, 'utf-8') : null;
+  if (existingManifest !== manifestContent) {
+    fs.writeFileSync(manifestPath, manifestContent);
+  }
+  return false;
+}
+
 /**
  * Transform frontmatter for external hosts.
  * Claude: strips `sensitive:` field (only Factory uses it).
@@ -238,12 +576,9 @@ function transformFrontmatter(content: string, host: Host): string {
   }
 
   // Allowlist mode: reconstruct frontmatter with only allowed fields
-  const fmStart = content.indexOf('---\n');
-  if (fmStart !== 0) return content;
-  const fmEnd = content.indexOf('\n---', fmStart + 4);
-  if (fmEnd === -1) return content;
-  const frontmatter = content.slice(fmStart + 4, fmEnd);
-  const body = content.slice(fmEnd + 4);
+  const parsed = parseFrontmatter(content);
+  if (!parsed) return content;
+  const { frontmatter, body } = parsed;
   const { name, description } = extractNameAndDescription(content);
 
   // Description limit enforcement
@@ -489,6 +824,13 @@ function processTemplate(tmplPath: string, host: Host = 'claude'): { outputPath:
     symlinkLoop = result.symlinkLoop;
   }
 
+    if (host === 'codex') {
+      content = adaptGeneratedContentForCodexApp(content);
+      if (skillName === 'autoplan') {
+        content = adaptAutoplanForCodexApp(content);
+      }
+    }
+
   // Prepend generated header (after frontmatter)
   const header = GENERATED_HEADER.replace('{{SOURCE}}', path.basename(tmplPath));
   const fmEnd = content.indexOf('---', content.indexOf('---') + 3);
@@ -518,6 +860,7 @@ for (const currentHost of hostsToRun) {
   try {
     let hasChanges = false;
     const tokenBudget: Array<{ skill: string; lines: number; tokens: number }> = [];
+    const appExportSkills: AppExportSkill[] = [];
 
     const currentHostConfig = getHostConfig(currentHost);
     for (const tmplPath of findTemplates()) {
@@ -559,6 +902,28 @@ for (const currentHost of hostsToRun) {
       const TOKEN_CEILING_BYTES = 100_000;
       if (content.length > TOKEN_CEILING_BYTES) {
         console.warn(`⚠️  TOKEN CEILING: ${relOutput} is ${content.length} bytes (~${tokens} tokens), exceeds ${TOKEN_CEILING_BYTES} byte ceiling (~25K tokens)`);
+      }
+
+      if (currentHostConfig.appExport && !symlinkLoop) {
+        const skillName = path.basename(path.dirname(outputPath));
+        const generatedDescription = extractNameAndDescription(content).description;
+        const metadataContent = currentHostConfig.generation.generateMetadata
+          ? generateOpenAIYaml(skillName, condenseOpenAIShortDescription(generatedDescription))
+          : null;
+        const appExportResult = writeAppExportSkill(currentHost, skillName, content, metadataContent);
+        if (appExportResult) {
+          appExportSkills.push(appExportResult.skill);
+          if (appExportResult.stale) hasChanges = true;
+        }
+      }
+    }
+
+    if (currentHostConfig.appExport) {
+      if (writeAppExportManifest(currentHost, appExportSkills)) {
+        hasChanges = true;
+      }
+      if (!DRY_RUN) {
+        console.log(`GENERATED: ${currentHostConfig.appExport.root}/${currentHostConfig.appExport.manifestFile}`);
       }
     }
 

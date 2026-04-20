@@ -4,11 +4,14 @@ dist/
 browse/dist/
 design/dist/
 bin/gstack-global-discover
+bin/gstack-global-discover.exe
 .gstack/
 .claude/skills/
 .claude/scheduled_tasks.lock
 .claude/*.lock
 .agents/
+plugins/gstack/
+.codex-app/
 .factory/
 .kiro/
 .opencode/
@@ -31,3 +34,4 @@ supabase/.temp/
 
 # Throughput analysis — local-only, regenerate via scripts/garry-output-comparison.ts
 docs/throughput-*.json
+docs/designs/CODEX_PORT_HANDOFF_2026-04-18.md

@@ -42,6 +42,12 @@ describe('locateBinary', () => {
     expect(agentsIdx).toBeLessThan(claudeIdx);
   });
 
+  test('searches Codex plugin runtime installs', () => {
+    const src = require('fs').readFileSync(require('path').join(__dirname, '../src/find-browse.ts'), 'utf-8');
+    expect(src).toContain(".codex', 'plugins', 'cache");
+    expect(src).toContain("'runtime', 'gstack', 'browse', 'dist'");
+  });
+
   test('function signature accepts no arguments', () => {
     // locateBinary should be callable with no arguments
     expect(typeof locateBinary).toBe('function');

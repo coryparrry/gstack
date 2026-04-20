@@ -1,7 +1,35 @@
 #!/usr/bin/env bash
-# gstack setup — build browser binary + register skills with Claude Code / Codex
+# gstack setup â€” build browser binary + register skills with Claude Code / Codex
 set -e
 umask 077  # Restrict new files to owner-only (0o600 files, 0o700 dirs)
+
+if ! command -v bun >/dev/null 2>&1; then
+  BUN_WIN_PATH="$(where.exe bun 2>/dev/null | tr -d '\r' | head -n 1)"
+  if [ -n "$BUN_WIN_PATH" ]; then
+    if command -v cygpath >/dev/null 2>&1; then
+      BUN_BIN="$(cygpath -u "$BUN_WIN_PATH")"
+    elif command -v wslpath >/dev/null 2>&1; then
+      BUN_BIN="$(wslpath -u "$BUN_WIN_PATH")"
+    else
+      BUN_BIN=""
+    fi
+
+    if [ -n "$BUN_BIN" ]; then
+      BUN_SHIM_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t gstack-bun)"
+      cat > "$BUN_SHIM_DIR/bun" <<EOF
+#!/usr/bin/env bash
+exec "$BUN_BIN" "\$@"
+EOF
+      cat > "$BUN_SHIM_DIR/bunx" <<EOF
+#!/usr/bin/env bash
+exec "$BUN_BIN" x "\$@"
+EOF
+      chmod +x "$BUN_SHIM_DIR/bun" "$BUN_SHIM_DIR/bunx"
+      PATH="$BUN_SHIM_DIR:$PATH"
+      export PATH
+    fi
+  fi
+fi
 
 if ! command -v bun >/dev/null 2>&1; then
   echo "Error: bun is required but not installed." >&2
@@ -18,8 +46,10 @@ INSTALL_GSTACK_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_GSTACK_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 INSTALL_SKILLS_DIR="$(dirname "$INSTALL_GSTACK_DIR")"
 BROWSE_BIN="$SOURCE_GSTACK_DIR/browse/dist/browse"
-CODEX_SKILLS="$HOME/.codex/skills"
-CODEX_GSTACK="$CODEX_SKILLS/gstack"
+if [ ! -x "$BROWSE_BIN" ] && [ -x "$SOURCE_GSTACK_DIR/browse/dist/browse.exe" ]; then
+  BROWSE_BIN="$SOURCE_GSTACK_DIR/browse/dist/browse.exe"
+fi
+CODEX_HOME_DEFAULT="$HOME/.codex"
 FACTORY_SKILLS="$HOME/.factory/skills"
 FACTORY_GSTACK="$FACTORY_SKILLS/gstack"
 OPENCODE_SKILLS="$HOME/.config/opencode/skills"
@@ -30,11 +60,94 @@ case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*|Windows_NT) IS_WINDOWS=1 ;;
 esac
 
-# ─── Quiet mode helper ────────────────────────────────────────
+if { [ -z "${CODEX_HOME:-}" ] || [ "${CODEX_HOME:-}" = "$HOME/.codex" ]; }; then
+  USERPROFILE_WIN="$(cmd.exe /c echo %USERPROFILE% 2>/dev/null | tr -d '\r')"
+  if [ -n "$USERPROFILE_WIN" ] && [ "$USERPROFILE_WIN" != "%USERPROFILE%" ]; then
+    if command -v cygpath >/dev/null 2>&1; then
+      CODEX_HOME_DEFAULT="$(cygpath -u "$USERPROFILE_WIN")/.codex"
+    elif command -v wslpath >/dev/null 2>&1; then
+      CODEX_HOME_DEFAULT="$(wslpath -u "$USERPROFILE_WIN")/.codex"
+    else
+      CODEX_HOME_DEFAULT="$USERPROFILE_WIN/.codex"
+    fi
+  fi
+fi
+
+CODEX_HOME="${CODEX_HOME:-$CODEX_HOME_DEFAULT}"
+CODEX_SKILLS="${CODEX_SKILLS:-$CODEX_HOME/skills}"
+CODEX_GSTACK="${CODEX_GSTACK:-$CODEX_SKILLS/gstack}"
+
+# â”€â”€â”€ Quiet mode helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 QUIET=0
 log() { [ "$QUIET" -eq 0 ] && echo "$@" || true; }
 
-# ─── Parse flags ──────────────────────────────────────────────
+normalize_setup_path() {
+  [ -n "$1" ] || return 1
+  local target="$1"
+  local base
+  local parent
+  local normalized_parent
+
+  case "$target" in
+    /) printf '/\n'; return 0 ;;
+  esac
+
+  base="$(basename -- "$target")" || return 1
+  parent="$(dirname -- "$target")" || return 1
+
+  if [ -d "$parent" ]; then
+    normalized_parent="$(cd "$parent" 2>/dev/null && pwd -P)" || return 1
+  else
+    normalized_parent="$(normalize_setup_path "$parent")" || return 1
+  fi
+
+  case "$normalized_parent" in
+    /) printf '/%s\n' "$base" ;;
+    *) printf '%s/%s\n' "$normalized_parent" "$base" ;;
+  esac
+}
+
+assert_path_within() {
+  local child="$1"
+  local parent="$2"
+  local label="$3"
+
+  case "$child" in
+    "$parent"|"$parent"/*) ;;
+    *)
+      echo "gstack setup failed: unsafe $label path outside $parent" >&2
+      exit 1
+      ;;
+  esac
+}
+
+validate_codex_install_paths() {
+  local codex_home_norm
+  local codex_skills_norm
+  local codex_gstack_norm
+
+  codex_home_norm="$(normalize_setup_path "$CODEX_HOME")" || {
+    echo "gstack setup failed: could not normalize CODEX_HOME" >&2
+    exit 1
+  }
+  codex_skills_norm="$(normalize_setup_path "$CODEX_SKILLS")" || {
+    echo "gstack setup failed: could not normalize CODEX_SKILLS" >&2
+    exit 1
+  }
+  codex_gstack_norm="$(normalize_setup_path "$CODEX_GSTACK")" || {
+    echo "gstack setup failed: could not normalize CODEX_GSTACK" >&2
+    exit 1
+  }
+
+  assert_path_within "$codex_skills_norm" "$codex_home_norm" "CODEX_SKILLS"
+  assert_path_within "$codex_gstack_norm" "$codex_skills_norm" "CODEX_GSTACK"
+
+  CODEX_HOME="$codex_home_norm"
+  CODEX_SKILLS="$codex_skills_norm"
+  CODEX_GSTACK="$codex_gstack_norm"
+}
+
+# â”€â”€â”€ Parse flags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 HOST="claude"
 LOCAL_INSTALL=0
 SKILL_PREFIX=1
@@ -59,7 +172,7 @@ case "$HOST" in
   claude|codex|kiro|factory|opencode|auto) ;;
   openclaw)
     echo ""
-    echo "OpenClaw integration uses a different model — OpenClaw spawns Claude Code"
+    echo "OpenClaw integration uses a different model â€” OpenClaw spawns Claude Code"
     echo "sessions natively via ACP. gstack provides methodology artifacts, not a"
     echo "full skill installation."
     echo ""
@@ -71,7 +184,7 @@ case "$HOST" in
     exit 0 ;;
   hermes)
     echo ""
-    echo "Hermes integration uses the same model as OpenClaw — Hermes spawns"
+    echo "Hermes integration uses the same model as OpenClaw â€” Hermes spawns"
     echo "Claude Code sessions, and gstack provides methodology artifacts."
     echo ""
     echo "To integrate gstack with Hermes:"
@@ -81,7 +194,7 @@ case "$HOST" in
     exit 0 ;;
   gbrain)
     echo ""
-    echo "GBrain is a mod for gstack — it makes coding skills brain-aware."
+    echo "GBrain is a mod for gstack â€” it makes coding skills brain-aware."
     echo "GBrain generates brain-enhanced skill variants that search your brain"
     echo "for context before starting and save results after finishing."
     echo ""
@@ -94,7 +207,7 @@ case "$HOST" in
   *) echo "Unknown --host value: $HOST (expected claude, codex, kiro, factory, opencode, openclaw, hermes, gbrain, or auto)" >&2; exit 1 ;;
 esac
 
-# ─── Resolve skill prefix preference ─────────────────────────
+# â”€â”€â”€ Resolve skill prefix preference â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Priority: CLI flag > saved config > interactive prompt (or flat default for non-TTY)
 GSTACK_CONFIG="$SOURCE_GSTACK_DIR/bin/gstack-config"
 export GSTACK_SETUP_RUNNING=1  # Prevent gstack-config post-set hook from triggering relink mid-setup
@@ -105,7 +218,7 @@ if [ "$SKILL_PREFIX_FLAG" -eq 0 ]; then
   elif [ "$_saved_prefix" = "false" ]; then
     SKILL_PREFIX=0
   else
-    # No saved preference — prompt interactively (or default flat for non-TTY/quiet)
+    # No saved preference â€” prompt interactively (or default flat for non-TTY/quiet)
     if [ "$QUIET" -eq 1 ]; then
       SKILL_PREFIX=0
     elif [ -t 0 ]; then
@@ -131,7 +244,7 @@ if [ "$SKILL_PREFIX_FLAG" -eq 0 ]; then
     "$GSTACK_CONFIG" set skill_prefix "$([ "$SKILL_PREFIX" -eq 1 ] && echo true || echo false)" 2>/dev/null || true
   fi
 else
-  # Flag was passed explicitly — persist the choice
+  # Flag was passed explicitly â€” persist the choice
   "$GSTACK_CONFIG" set skill_prefix "$([ "$SKILL_PREFIX" -eq 1 ] && echo true || echo false)" 2>/dev/null || true
 fi
 
@@ -177,6 +290,10 @@ elif [ "$HOST" = "opencode" ]; then
   INSTALL_OPENCODE=1
 fi
 
+if [ "$INSTALL_CODEX" -eq 1 ]; then
+  validate_codex_install_paths
+fi
+
 migrate_direct_codex_install() {
   local gstack_dir="$1"
   local codex_gstack="$2"
@@ -198,6 +315,9 @@ migrate_direct_codex_install() {
   INSTALL_GSTACK_DIR="$migrated_dir"
   INSTALL_SKILLS_DIR="$(dirname "$INSTALL_GSTACK_DIR")"
   BROWSE_BIN="$SOURCE_GSTACK_DIR/browse/dist/browse"
+  if [ ! -x "$BROWSE_BIN" ] && [ -x "$SOURCE_GSTACK_DIR/browse/dist/browse.exe" ]; then
+    BROWSE_BIN="$SOURCE_GSTACK_DIR/browse/dist/browse.exe"
+  fi
 }
 
 if [ "$INSTALL_CODEX" -eq 1 ]; then
@@ -264,7 +384,7 @@ if [ "$NEEDS_BUILD" -eq 1 ]; then
   # macOS: install coreutils for `gtimeout` (Codex hang protection in /codex + /autoplan).
   # macOS ships BSD `timeout`-less; Homebrew's coreutils installs GNU timeout as
   # `gtimeout` to avoid shadowing BSD utilities. The /codex and /autoplan skills
-  # fall back to unwrapped codex invocations when neither is available — this
+  # fall back to unwrapped codex invocations when neither is available â€” this
   # auto-install upgrades them to hang-protected where possible.
   # Skip entirely with GSTACK_SKIP_COREUTILS=1 (CI, managed machines, offline envs).
   if [ "$(uname -s)" = "Darwin" ] && [ "${GSTACK_SKIP_COREUTILS:-0}" != "1" ]; then
@@ -284,8 +404,8 @@ if [ ! -x "$BROWSE_BIN" ]; then
   exit 1
 fi
 
-# 1b. Generate .agents/ Codex skill docs — always regenerate to prevent stale descriptions.
-# .agents/ is no longer committed — generated at setup time from .tmpl templates.
+# 1b. Generate .agents/ Codex skill docs â€” always regenerate to prevent stale descriptions.
+# .agents/ is no longer committed â€” generated at setup time from .tmpl templates.
 # bun run build already does this, but we need it when NEEDS_BUILD=0 (binary is fresh).
 # Always regenerate: generation is fast (<2s) and mtime-based staleness checks are fragile
 # (miss stale files when timestamps match after clone/checkout/upgrade).
@@ -293,11 +413,11 @@ AGENTS_DIR="$SOURCE_GSTACK_DIR/.agents/skills"
 NEEDS_AGENTS_GEN=1
 
 if [ "$NEEDS_AGENTS_GEN" -eq 1 ] && [ "$NEEDS_BUILD" -eq 0 ]; then
-  log "Generating .agents/ skill docs..."
+  log "Generating Codex app bundle..."
   (
     cd "$SOURCE_GSTACK_DIR"
     bun install --frozen-lockfile 2>/dev/null || bun install
-    bun run gen:skill-docs --host codex
+    bun run codex:export
   )
 fi
 
@@ -322,6 +442,7 @@ if [ "$INSTALL_OPENCODE" -eq 1 ] && [ "$NEEDS_BUILD" -eq 0 ]; then
 fi
 
 # 2. Ensure Playwright's Chromium is available
+if [ "${GSTACK_SKIP_PLAYWRIGHT_SETUP:-0}" != "1" ]; then
 if ! ensure_playwright_browser; then
   echo "Installing Playwright Chromium..."
   (
@@ -330,14 +451,14 @@ if ! ensure_playwright_browser; then
   )
 
   if [ "$IS_WINDOWS" -eq 1 ]; then
-    # On Windows, Node.js launches Chromium (not Bun — see oven-sh/bun#4253).
+    # On Windows, Node.js launches Chromium (not Bun â€” see oven-sh/bun#4253).
     # Ensure playwright is importable by Node from the gstack directory.
     if ! command -v node >/dev/null 2>&1; then
       echo "gstack setup failed: Node.js is required on Windows (Bun cannot launch Chromium due to a pipe bug)" >&2
       echo "  Install Node.js: https://nodejs.org/" >&2
       exit 1
     fi
-    echo "Windows detected — verifying Node.js can load Playwright..."
+    echo "Windows detected â€” verifying Node.js can load Playwright..."
     (
       cd "$SOURCE_GSTACK_DIR"
       # Bun's node_modules already has playwright; verify Node can require it
@@ -360,11 +481,12 @@ if ! ensure_playwright_browser; then
   fi
   exit 1
 fi
+fi
 
 # 3. Ensure ~/.gstack global state directory exists
 mkdir -p "$HOME/.gstack/projects"
 
-# ─── Helper: link Claude skill subdirectories into a skills parent directory ──
+# â”€â”€â”€ Helper: link Claude skill subdirectories into a skills parent directory â”€â”€
 # Creates real directories (not symlinks) at the top level with a SKILL.md symlink
 # inside. This ensures Claude discovers them as top-level skills, not nested under
 # gstack/ (which would auto-prefix them as gstack-*).
@@ -379,7 +501,7 @@ link_claude_skill_dirs() {
       dir_name="$(basename "$skill_dir")"
       # Skip node_modules
       [ "$dir_name" = "node_modules" ] && continue
-      # Use frontmatter name: if present (e.g., run-tests/ with name: test → symlink as "test")
+      # Use frontmatter name: if present (e.g., run-tests/ with name: test â†’ symlink as "test")
       skill_name=$(grep -m1 '^name:' "$skill_dir/SKILL.md" 2>/dev/null | sed 's/^name:[[:space:]]*//' | tr -d '[:space:]')
       [ -z "$skill_name" ] && skill_name="$dir_name"
       # Apply gstack- prefix unless --no-prefix or already prefixed
@@ -410,7 +532,7 @@ link_claude_skill_dirs() {
   fi
 }
 
-# ─── Helper: remove old unprefixed Claude skill entries ───────────────────────
+# â”€â”€â”€ Helper: remove old unprefixed Claude skill entries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Migration: when switching from flat names to gstack- prefixed names,
 # clean up stale symlinks or directories that point into the gstack directory.
 cleanup_old_claude_symlinks() {
@@ -421,7 +543,7 @@ cleanup_old_claude_symlinks() {
     if [ -f "$skill_dir/SKILL.md" ]; then
       skill_name="$(basename "$skill_dir")"
       [ "$skill_name" = "node_modules" ] && continue
-      # Skip already-prefixed dirs (gstack-upgrade) — no old symlink to clean
+      # Skip already-prefixed dirs (gstack-upgrade) â€” no old symlink to clean
       case "$skill_name" in gstack-*) continue ;; esac
       old_target="$skills_dir/$skill_name"
       # Remove directory symlinks pointing into gstack/
@@ -450,7 +572,7 @@ cleanup_old_claude_symlinks() {
   fi
 }
 
-# ─── Helper: remove old prefixed Claude skill entries ─────────────────────────
+# â”€â”€â”€ Helper: remove old prefixed Claude skill entries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Reverse migration: when switching from gstack- prefixed names to flat names,
 # clean up stale gstack-* symlinks or directories that point into the gstack directory.
 cleanup_prefixed_claude_symlinks() {
@@ -491,29 +613,29 @@ cleanup_prefixed_claude_symlinks() {
   fi
 }
 
-# ─── Helper: link generated Codex skills into a skills parent directory ──
+# â”€â”€â”€ Helper: link generated Codex skills into a skills parent directory â”€â”€
 # Installs from .agents/skills/gstack-* (the generated Codex-format skills)
 # instead of source dirs (which have Claude paths).
 link_codex_skill_dirs() {
   local gstack_dir="$1"
   local skills_dir="$2"
-  local agents_dir="$gstack_dir/.agents/skills"
+  local export_dir="$gstack_dir/.codex-app/skills"
   local linked=()
 
-  if [ ! -d "$agents_dir" ]; then
-    echo "  Generating .agents/ skill docs..."
-    ( cd "$gstack_dir" && bun run gen:skill-docs --host codex )
+  if [ ! -d "$export_dir" ]; then
+    echo "  Generating .codex-app export..."
+    ( cd "$gstack_dir" && bun run codex:export )
   fi
 
-  if [ ! -d "$agents_dir" ]; then
-    echo "  warning: .agents/skills/ generation failed — run 'bun run gen:skill-docs --host codex' manually" >&2
+  if [ ! -d "$export_dir" ]; then
+    echo "  warning: .agents/skills/ generation failed â€” run 'bun run gen:skill-docs --host codex' manually" >&2
     return 1
   fi
 
-  for skill_dir in "$agents_dir"/gstack*/; do
+  for skill_dir in "$export_dir"/gstack*/; do
     if [ -f "$skill_dir/SKILL.md" ]; then
       skill_name="$(basename "$skill_dir")"
-      # Skip the sidecar directory — it contains runtime asset symlinks (bin/,
+      # Skip the sidecar directory â€” it contains runtime asset symlinks (bin/,
       # browse/), not a skill. Linking it would overwrite the root gstack
       # symlink that Step 5 already pointed at the repo root.
       [ "$skill_name" = "gstack" ] && continue
@@ -530,7 +652,7 @@ link_codex_skill_dirs() {
   fi
 }
 
-# ─── Helper: create .agents/skills/gstack/ sidecar symlinks ──────────
+# â”€â”€â”€ Helper: create .agents/skills/gstack/ sidecar symlinks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Codex/Gemini/Cursor read skills from .agents/skills/. We link runtime
 # assets (bin/, browse/dist/, review/, qa/, etc.) so skill templates can
 # resolve paths like $SKILL_ROOT/review/design-checklist.md.
@@ -562,7 +684,7 @@ create_agents_sidecar() {
   done
 }
 
-# ─── Helper: create a minimal ~/.codex/skills/gstack runtime root ───────────
+# â”€â”€â”€ Helper: create a minimal ~/.codex/skills/gstack runtime root â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Codex scans ~/.codex/skills recursively. Exposing the whole repo here causes
 # duplicate skills because source SKILL.md files and generated Codex skills are
 # both discoverable. Keep this directory limited to runtime assets + root skill.
@@ -602,10 +724,169 @@ create_codex_runtime_root() {
       ln -snf "$gstack_dir/review/$f" "$codex_gstack/review/$f"
     fi
   done
-  # ETHOS.md — referenced by "Search Before Building" in all skill preambles
+  # ETHOS.md â€” referenced by "Search Before Building" in all skill preambles
   if [ -f "$gstack_dir/ETHOS.md" ]; then
     ln -snf "$gstack_dir/ETHOS.md" "$codex_gstack/ETHOS.md"
   fi
+}
+
+install_codex_runtime_bundle() {
+  local gstack_dir="$1"
+  local codex_gstack="$2"
+  local runtime_bundle="$gstack_dir/.codex-app/runtime/gstack"
+
+  if [ ! -d "$runtime_bundle" ]; then
+    echo "  Generating .codex-app runtime bundle..."
+    ( cd "$gstack_dir" && bun run codex:export )
+  fi
+
+  if [ ! -d "$runtime_bundle" ]; then
+    echo "  warning: missing Codex runtime bundle - run 'bun run codex:export' manually" >&2
+    return 1
+  fi
+
+  if [ -L "$codex_gstack" ]; then
+    rm -f "$codex_gstack"
+  elif [ -d "$codex_gstack" ] && [ "$codex_gstack" != "$gstack_dir" ]; then
+    rm -rf "$codex_gstack"
+  fi
+
+  ln -snf "$runtime_bundle" "$codex_gstack"
+}
+
+to_codex_marketplace_source_path() {
+  local target="$1"
+  local win_path=""
+
+  if command -v cygpath >/dev/null 2>&1; then
+    win_path="$(cygpath -w "$target" 2>/dev/null || true)"
+  elif command -v wslpath >/dev/null 2>&1; then
+    win_path="$(wslpath -w "$target" 2>/dev/null || true)"
+  elif [ "$IS_WINDOWS" -eq 1 ]; then
+    win_path="${target//\//\\}"
+  fi
+
+  if [ -n "$win_path" ]; then
+    printf '\\\\?\\%s\n' "${win_path//\//\\}"
+    return 0
+  fi
+
+  printf '%s\n' "$target"
+}
+
+ensure_codex_marketplace_registered() {
+  local codex_home="$1"
+  local marketplace_root="$2"
+  local config_path="$codex_home/config.toml"
+  local source_path
+  local updated_at
+
+  source_path="$(to_codex_marketplace_source_path "$marketplace_root")"
+  updated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  mkdir -p "$codex_home"
+  touch "$config_path"
+  tmp_config="$(mktemp "${TMPDIR:-/tmp}/gstack-codex-config.XXXXXX")"
+
+  awk '
+    BEGIN { skip = 0 }
+    /^\[marketplaces\.gstack-local\]$/ { skip = 1; next }
+    skip && /^\[/ { skip = 0 }
+    !skip { print }
+  ' "$config_path" > "$tmp_config"
+
+  if [ -s "$tmp_config" ]; then
+    printf '\n' >> "$tmp_config"
+  fi
+
+  cat >> "$tmp_config" <<EOF
+[marketplaces.gstack-local]
+last_updated = "$updated_at"
+source_type = "local"
+source = '$source_path'
+EOF
+
+  mv "$tmp_config" "$config_path"
+}
+
+ensure_codex_plugin_enabled() {
+  local codex_home="$1"
+  local config_path="$codex_home/config.toml"
+
+  mkdir -p "$codex_home"
+  touch "$config_path"
+  tmp_config="$(mktemp "${TMPDIR:-/tmp}/gstack-codex-plugin-config.XXXXXX")"
+
+  awk '
+    BEGIN { skip = 0 }
+    /^\[plugins\."gstack@gstack-local"\]$/ { skip = 1; next }
+    skip && /^\[/ { skip = 0 }
+    !skip { print }
+  ' "$config_path" > "$tmp_config"
+
+  if [ -s "$tmp_config" ]; then
+    printf '\n' >> "$tmp_config"
+  fi
+
+  cat >> "$tmp_config" <<EOF
+[plugins."gstack@gstack-local"]
+enabled = true
+EOF
+
+  mv "$tmp_config" "$config_path"
+}
+
+install_codex_local_marketplace() {
+  local gstack_dir="$1"
+  local codex_home="$2"
+  local marketplace_root="$codex_home/local-marketplaces/gstack-local"
+  local plugin_root="$marketplace_root/plugins/gstack"
+  local marketplace_json="$marketplace_root/.agents/plugins/marketplace.json"
+  local cache_root="$codex_home/plugins/cache/gstack-local/gstack"
+  local marketplace_root_norm
+  local cache_root_norm
+
+  mkdir -p "$marketplace_root"
+
+  (
+    cd "$gstack_dir"
+    bun scripts/export-codex-plugin.ts \
+      --plugin-root "$plugin_root" \
+      --marketplace-path "$marketplace_json"
+  )
+
+  marketplace_root_norm="$(normalize_setup_path "$marketplace_root")" || {
+    echo "gstack setup failed: could not normalize Codex marketplace root" >&2
+    exit 1
+  }
+  cache_root_norm="$(normalize_setup_path "$cache_root")" || {
+    echo "gstack setup failed: could not normalize Codex plugin cache root" >&2
+    exit 1
+  }
+  assert_path_within "$marketplace_root_norm" "$codex_home" "Codex marketplace"
+  assert_path_within "$cache_root_norm" "$codex_home" "Codex plugin cache"
+
+  rm -rf "$cache_root_norm"
+  mkdir -p "$(dirname "$cache_root_norm")"
+  cp -R "$plugin_root" "$cache_root_norm"
+
+  ensure_codex_marketplace_registered "$codex_home" "$marketplace_root"
+  ensure_codex_plugin_enabled "$codex_home"
+}
+
+cleanup_codex_legacy_skills() {
+  local skills_dir="$1"
+
+  if [ ! -d "$skills_dir" ]; then
+    return 0
+  fi
+
+  for target in "$skills_dir"/gstack*; do
+    if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+      continue
+    fi
+    rm -rf "$target"
+  done
 }
 
 create_factory_runtime_root() {
@@ -711,7 +992,7 @@ link_factory_skill_dirs() {
   fi
 
   if [ ! -d "$factory_dir" ]; then
-    echo "  warning: .factory/skills/ generation failed — run 'bun run gen:skill-docs --host factory' manually" >&2
+    echo "  warning: .factory/skills/ generation failed â€” run 'bun run gen:skill-docs --host factory' manually" >&2
     return 1
   fi
 
@@ -743,7 +1024,7 @@ link_opencode_skill_dirs() {
   fi
 
   if [ ! -d "$opencode_dir" ]; then
-    echo "  warning: .opencode/skills/ generation failed — run 'bun run gen:skill-docs --host opencode' manually" >&2
+    echo "  warning: .opencode/skills/ generation failed â€” run 'bun run gen:skill-docs --host opencode' manually" >&2
     return 1
   fi
 
@@ -790,7 +1071,7 @@ if [ "$INSTALL_CLAUDE" -eq 1 ]; then
     if [ -x "$GSTACK_RELINK" ]; then
       GSTACK_SKILLS_DIR="$INSTALL_SKILLS_DIR" GSTACK_INSTALL_DIR="$SOURCE_GSTACK_DIR" "$GSTACK_RELINK" >/dev/null 2>&1 || true
     fi
-    # Backwards-compat alias: /connect-chrome → /open-gstack-browser
+    # Backwards-compat alias: /connect-chrome â†’ /open-gstack-browser
     _OGB_LINK="$INSTALL_SKILLS_DIR/connect-chrome"
     if [ "$SKILL_PREFIX" -eq 1 ]; then
       _OGB_LINK="$INSTALL_SKILLS_DIR/gstack-connect-chrome"
@@ -806,7 +1087,7 @@ if [ "$INSTALL_CLAUDE" -eq 1 ]; then
     fi
     log "  browse: $BROWSE_BIN"
   else
-    # Not inside a skills/ directory — symlink into ~/.claude/skills/ and retry
+    # Not inside a skills/ directory â€” symlink into ~/.claude/skills/ and retry
     CLAUDE_SKILLS_DIR="$HOME/.claude/skills"
     CLAUDE_GSTACK_LINK="$CLAUDE_SKILLS_DIR/gstack"
     mkdir -p "$CLAUDE_SKILLS_DIR"
@@ -845,18 +1126,14 @@ if [ "$INSTALL_CODEX" -eq 1 ]; then
     CODEX_GSTACK="$INSTALL_GSTACK_DIR"
   fi
   mkdir -p "$CODEX_SKILLS"
+  cleanup_codex_legacy_skills "$CODEX_SKILLS"
+  install_codex_local_marketplace "$SOURCE_GSTACK_DIR" "$CODEX_HOME"
 
-  # Skip runtime root creation for repo-local installs — the checkout IS the runtime root.
-  # create_codex_runtime_root would create self-referential symlinks (bin → bin, etc.).
-  if [ "$CODEX_REPO_LOCAL" -eq 0 ]; then
-    create_codex_runtime_root "$SOURCE_GSTACK_DIR" "$CODEX_GSTACK"
-  fi
-  # Install generated Codex-format skills (not Claude source dirs)
-  link_codex_skill_dirs "$SOURCE_GSTACK_DIR" "$CODEX_SKILLS"
-
+  # Skip runtime root creation for repo-local installs â€” the checkout IS the runtime root.
+  # create_codex_runtime_root would create self-referential symlinks (bin â†’ bin, etc.).
   log "gstack ready (codex)."
   log "  browse: $BROWSE_BIN"
-  log "  codex skills: $CODEX_SKILLS"
+  log "  codex plugin cache: $CODEX_HOME/plugins/cache/gstack-local/gstack"
 fi
 
 # 6. Install for Kiro CLI (copy from .agents/skills, rewrite paths)
@@ -873,7 +1150,7 @@ if [ "$INSTALL_KIRO" -eq 1 ]; then
   ln -snf "$SOURCE_GSTACK_DIR/bin" "$KIRO_GSTACK/bin"
   ln -snf "$SOURCE_GSTACK_DIR/browse/dist" "$KIRO_GSTACK/browse/dist"
   ln -snf "$SOURCE_GSTACK_DIR/browse/bin" "$KIRO_GSTACK/browse/bin"
-  # ETHOS.md — referenced by "Search Before Building" in all skill preambles
+  # ETHOS.md â€” referenced by "Search Before Building" in all skill preambles
   if [ -f "$SOURCE_GSTACK_DIR/ETHOS.md" ]; then
     ln -snf "$SOURCE_GSTACK_DIR/ETHOS.md" "$KIRO_GSTACK/ETHOS.md"
   fi
@@ -895,7 +1172,7 @@ if [ "$INSTALL_KIRO" -eq 1 ]; then
       "$SOURCE_GSTACK_DIR/SKILL.md" > "$KIRO_GSTACK/SKILL.md"
 
   if [ ! -d "$AGENTS_DIR" ]; then
-    echo "  warning: no .agents/skills/ directory found — run 'bun run build' first" >&2
+    echo "  warning: no .agents/skills/ directory found â€” run 'bun run build' first" >&2
   else
     for skill_dir in "$AGENTS_DIR"/gstack*/; do
       [ -f "$skill_dir/SKILL.md" ] || continue
@@ -949,7 +1226,7 @@ MIGRATIONS_DIR="$SOURCE_GSTACK_DIR/gstack-upgrade/migrations"
 CURRENT_VERSION=$(cat "$SOURCE_GSTACK_DIR/VERSION" 2>/dev/null || echo "unknown")
 LAST_SETUP_VERSION=$(cat "$HOME/.gstack/.last-setup-version" 2>/dev/null || echo "0.0.0.0")
 if [ -d "$MIGRATIONS_DIR" ] && [ "$CURRENT_VERSION" != "unknown" ] && [ "$LAST_SETUP_VERSION" != "$CURRENT_VERSION" ]; then
-  # Fresh install (no marker file) — skip migrations, just write marker
+  # Fresh install (no marker file) â€” skip migrations, just write marker
   if [ ! -f "$HOME/.gstack/.last-setup-version" ]; then
     : # fall through to marker write below
   else

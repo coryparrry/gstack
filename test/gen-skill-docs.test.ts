@@ -171,6 +171,37 @@ describe('gen-skill-docs', () => {
     expect(violations).toEqual([]);
   });
 
+  test('generated Codex skills strip stale Claude and Codex CLI drift', () => {
+    const agentsDir = path.join(ROOT, '.agents', 'skills');
+    if (!fs.existsSync(agentsDir)) return;
+
+    const blockedPatterns = [
+      'CLAUDE.md',
+      'codex exec',
+      'codex review',
+      'Claude subagent',
+      'Claude Code',
+      'Agent tool',
+      'Grep tool',
+      'Codex Review',
+    ];
+
+    const hits: string[] = [];
+    for (const entry of fs.readdirSync(agentsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const skillMd = path.join(agentsDir, entry.name, 'SKILL.md');
+      if (!fs.existsSync(skillMd)) continue;
+      const content = fs.readFileSync(skillMd, 'utf-8');
+      for (const pattern of blockedPatterns) {
+        if (content.includes(pattern)) {
+          hits.push(`${entry.name}: ${pattern}`);
+        }
+      }
+    }
+
+    expect(hits).toEqual([]);
+  });
+
   test('package.json version matches VERSION file', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8'));
     const version = fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf-8').trim();
@@ -1359,6 +1390,12 @@ describe('preamble routing injection', () => {
     expect(shipContent).toContain('invoke ship');
     expect(shipContent).toContain('invoke qa');
   });
+
+  test('Claude host routing injection stays CLAUDE.md-specific', () => {
+    expect(shipContent).toContain('your project\'s CLAUDE.md includes skill routing rules');
+    expect(shipContent).toContain('Add routing rules to CLAUDE.md');
+    expect(shipContent).toContain('git add CLAUDE.md && git commit -m "chore: add gstack skill routing rules to CLAUDE.md"');
+  });
 });
 
 // --- {{DESIGN_OUTSIDE_VOICES}} resolver tests ---
@@ -1475,6 +1512,7 @@ describe('DESIGN_REVIEW_LITE extended with Codex', () => {
 
 describe('Codex generation (--host codex)', () => {
   const AGENTS_DIR = path.join(ROOT, '.agents', 'skills');
+  const CODEX_APP_DIR = path.join(ROOT, '.codex-app');
 
   // .agents/ is gitignored (v0.11.2.0) — generate on demand for tests
   Bun.spawnSync(['bun', 'run', 'scripts/gen-skill-docs.ts', '--host', 'codex'], {
@@ -1511,6 +1549,13 @@ describe('Codex generation (--host codex)', () => {
   test('--host codex generates correct output paths', () => {
     for (const skill of CODEX_SKILLS) {
       const skillMd = path.join(AGENTS_DIR, skill.codexName, 'SKILL.md');
+      expect(fs.existsSync(skillMd)).toBe(true);
+    }
+  });
+
+  test('--host codex generates app export skill paths', () => {
+    for (const skill of CODEX_SKILLS) {
+      const skillMd = path.join(CODEX_APP_DIR, 'skills', skill.codexName, 'SKILL.md');
       expect(fs.existsSync(skillMd)).toBe(true);
     }
   });
@@ -1564,6 +1609,93 @@ describe('Codex generation (--host codex)', () => {
     }
   });
 
+  test('all Codex app export skills have agents/openai.yaml metadata', () => {
+    for (const skill of CODEX_SKILLS) {
+      const metadata = path.join(CODEX_APP_DIR, 'skills', skill.codexName, 'agents', 'openai.yaml');
+      expect(fs.existsSync(metadata)).toBe(true);
+      const content = fs.readFileSync(metadata, 'utf-8');
+      expect(content).toContain(`display_name: "${skill.codexName}"`);
+      expect(content).toContain('short_description:');
+      expect(content).toContain('allow_implicit_invocation: true');
+    }
+  });
+
+  test('Codex skill frontmatter stays allowlisted in both export trees', () => {
+    const extractFrontmatter = (content: string): string => {
+      const match = content.match(/^---\n([\s\S]*?)\n---/);
+      expect(match).not.toBeNull();
+      return match![1];
+    };
+
+    const agentsSkill = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-ship', 'SKILL.md'), 'utf-8');
+    const appSkill = fs.readFileSync(path.join(CODEX_APP_DIR, 'skills', 'gstack-ship', 'SKILL.md'), 'utf-8');
+
+    for (const frontmatter of [extractFrontmatter(agentsSkill), extractFrontmatter(appSkill)]) {
+      expect(frontmatter).toContain('name: ship');
+      expect(frontmatter).toContain('description: |');
+      expect(frontmatter).not.toContain('preamble-tier:');
+      expect(frontmatter).not.toContain('version:');
+      expect(frontmatter).not.toContain('allowed-tools:');
+      expect(frontmatter).not.toContain('sensitive:');
+      expect(frontmatter).not.toContain('triggers:');
+    }
+  });
+
+  test('Codex app export manifest describes bundled skills and runtime assets', () => {
+    const manifestPath = path.join(CODEX_APP_DIR, 'manifest.json');
+    expect(fs.existsSync(manifestPath)).toBe(true);
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    expect(manifest.schemaVersion).toBe(1);
+    expect(manifest.host).toBe('codex');
+    expect(manifest.skillRoot).toBe('skills');
+    expect(manifest.runtimeRoot).toBe('runtime/gstack');
+    expect(manifest.rootBundle.name).toBe('gstack');
+    expect(manifest.rootBundle.path).toBe('skills/gstack/SKILL.md');
+    expect(manifest.runtimeBundle.path).toBe('runtime/gstack');
+    expect(manifest.runtimeBundle.skillPath).toBe('runtime/gstack/SKILL.md');
+    expect(manifest.runtimeBundle.metadataPath).toBe('runtime/gstack/agents/openai.yaml');
+    expect(manifest.runtimeBundle.assets).toContain('bin');
+    expect(manifest.runtimeBundle.assets).toContain('browse/dist');
+    expect(manifest.runtimeBundle.assets).toContain('gstack-upgrade');
+    expect(manifest.runtimeBundle.assets).toContain('review/design-checklist.md');
+    expect(manifest.runtime.globalRoot).toBe('.codex/skills/gstack');
+    expect(manifest.runtime.localSkillRoot).toBe('.agents/skills/gstack');
+    expect(manifest.runtime.sidecar.path).toBe('.agents/skills/gstack');
+    expect(manifest.runtime.runtimeRoot.globalSymlinks).toContain('bin');
+    expect(manifest.runtime.runtimeRoot.globalSymlinks).toContain('ETHOS.md');
+    const exportedSkillNames = manifest.skills.map((skill: { name: string }) => skill.name).sort();
+    const expectedSkillNames = CODEX_SKILLS.map(skill => skill.codexName).sort();
+    expect(exportedSkillNames).toEqual(expectedSkillNames);
+  });
+
+  test('codex:export materializes a self-contained runtime bundle', () => {
+    const result = Bun.spawnSync(['bun', 'run', 'codex:export'], {
+      cwd: ROOT,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    expect(result.exitCode).toBe(0);
+
+    const runtimeRoot = path.join(CODEX_APP_DIR, 'runtime', 'gstack');
+    expect(fs.existsSync(path.join(runtimeRoot, 'SKILL.md'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'agents', 'openai.yaml'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'bin'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'browse', 'dist'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'browse', 'bin'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'review', 'checklist.md'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'review', 'design-checklist.md'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'review', 'greptile-triage.md'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'review', 'TODOS-format.md'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'gstack-upgrade', 'SKILL.md'))).toBe(true);
+    expect(fs.existsSync(path.join(runtimeRoot, 'ETHOS.md'))).toBe(true);
+  });
+
+  test('codex:export normalizes runtime shell scripts to LF', () => {
+    const runtimeSlug = fs.readFileSync(path.join(CODEX_APP_DIR, 'runtime', 'gstack', 'bin', 'gstack-slug'), 'utf-8');
+    expect(runtimeSlug).not.toContain('\r\n');
+    expect(runtimeSlug.startsWith('#!/usr/bin/env bash')).toBe(true);
+  });
+
   test('no .claude/skills/ in Codex output', () => {
     for (const skill of CODEX_SKILLS) {
       const content = fs.readFileSync(path.join(AGENTS_DIR, skill.codexName, 'SKILL.md'), 'utf-8');
@@ -1575,6 +1707,43 @@ describe('Codex generation (--host codex)', () => {
     for (const skill of CODEX_SKILLS) {
       const content = fs.readFileSync(path.join(AGENTS_DIR, skill.codexName, 'SKILL.md'), 'utf-8');
       expect(content).not.toContain('~/.claude/');
+    }
+  });
+
+  test('Codex learn skill keeps learnings and memory flows on GSTACK runtime paths', () => {
+    const paths = [
+      path.join(AGENTS_DIR, 'gstack-learn', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack-learn', 'SKILL.md'),
+    ];
+
+    for (const skillPath of paths) {
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toContain('_LEARN_FILE="${GSTACK_HOME:-$HOME/.gstack}/projects/${SLUG:-unknown}/learnings.jsonl"');
+      expect(content).toContain('_PROJ="${GSTACK_HOME:-$HOME/.gstack}/projects/${SLUG:-unknown}"');
+      expect(content).toContain('$GSTACK_BIN/gstack-learnings-search --limit 3');
+      expect(content).toContain('$GSTACK_BIN/gstack-timeline-log');
+      expect(content).toContain('eval "$($GSTACK_ROOT/bin/gstack-slug 2>/dev/null)"');
+      expect(content).toContain('$GSTACK_ROOT/bin/gstack-learnings-search --limit 20');
+      expect(content).toContain('$GSTACK_ROOT/bin/gstack-learnings-log');
+      expect(content).not.toContain('~/.claude/skills/gstack/bin/');
+      expect(content).not.toContain('.claude/skills/gstack/bin/');
+    }
+  });
+
+  test('Codex routing injection targets AGENTS.md instead of CLAUDE.md', () => {
+    const paths = [
+      path.join(AGENTS_DIR, 'gstack-ship', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack-ship', 'SKILL.md'),
+    ];
+
+    for (const skillPath of paths) {
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toContain('grep -q "## Skill routing" AGENTS.md');
+      expect(content).toContain('your project\'s AGENTS.md includes skill routing rules');
+      expect(content).toContain('This tells Codex to use specialized workflows');
+      expect(content).toContain('Add routing rules to AGENTS.md');
+      expect(content).toContain('git add AGENTS.md && git commit -m "chore: add gstack skill routing rules to AGENTS.md"');
+      expect(content).not.toContain('Add routing rules to CLAUDE.md');
     }
   });
 
@@ -1600,12 +1769,42 @@ describe('Codex generation (--host codex)', () => {
       stderr: 'pipe',
     });
     expect(result.exitCode).toBe(0);
-    const output = result.stdout.toString();
+    const output = result.stdout.toString().replaceAll('\\', '/');
     // Every Codex skill should be FRESH
     for (const skill of CODEX_SKILLS) {
       expect(output).toContain(`FRESH: .agents/skills/${skill.codexName}/SKILL.md`);
+      expect(output).toContain(`FRESH: .codex-app/skills/${skill.codexName}/SKILL.md`);
+      expect(output).toContain(`FRESH: .codex-app/skills/${skill.codexName}/agents/openai.yaml`);
     }
+    expect(output).toContain('FRESH: .codex-app/manifest.json');
     expect(output).not.toContain('STALE');
+  });
+
+  test('--host codex --dry-run does not rewrite app export files', () => {
+    const skillPath = path.join(CODEX_APP_DIR, 'skills', 'gstack-office-hours', 'SKILL.md');
+    const metadataPath = path.join(CODEX_APP_DIR, 'skills', 'gstack-office-hours', 'agents', 'openai.yaml');
+    const manifestPath = path.join(CODEX_APP_DIR, 'manifest.json');
+
+    const before = [
+      fs.statSync(skillPath).mtimeMs,
+      fs.statSync(metadataPath).mtimeMs,
+      fs.statSync(manifestPath).mtimeMs,
+    ];
+
+    const result = Bun.spawnSync(['bun', 'run', 'scripts/gen-skill-docs.ts', '--host', 'codex', '--dry-run'], {
+      cwd: ROOT,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+
+    expect(result.exitCode).toBe(0);
+
+    const after = [
+      fs.statSync(skillPath).mtimeMs,
+      fs.statSync(metadataPath).mtimeMs,
+      fs.statSync(manifestPath).mtimeMs,
+    ];
+    expect(after).toEqual(before);
   });
 
   test('--host agents alias produces same output as --host codex', () => {
@@ -1670,50 +1869,135 @@ describe('Codex generation (--host codex)', () => {
 
   // ─── Path rewriting regression tests ─────────────────────────
 
-  test('sidecar paths point to .agents/skills/gstack/review/ (not gstack-review/)', () => {
-    // Regression: gen-skill-docs rewrote .claude/skills/review → .agents/skills/gstack-review
-    // but setup puts sidecars under .agents/skills/gstack/review/. Must match setup layout.
+  test('review helper paths in Codex point at the runtime bundle', () => {
     const content = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-review', 'SKILL.md'), 'utf-8');
-    // Correct: references to sidecar files use gstack/review/ path
-    expect(content).toContain('.agents/skills/gstack/review/checklist.md');
-    // design-checklist.md is now referenced via Review Army specialist (Claude only, stripped for Codex)
-    // Wrong: must NOT reference gstack-review/checklist.md (file doesn't exist there)
-    expect(content).not.toContain('.agents/skills/gstack-review/checklist.md');
+    expect(content).toContain('$GSTACK_ROOT/review/checklist.md');
+    expect(content).toContain('$GSTACK_ROOT/review/greptile-triage.md');
+    expect(content).not.toContain('.agents/skills/gstack/review/checklist.md');
+    expect(content).not.toContain('.agents/skills/gstack/review/greptile-triage.md');
   });
 
-  test('sidecar paths in ship skill point to gstack/review/ for pre-landing review', () => {
+  test('ship skill reads review helpers from the runtime bundle and linked skills from the skill root', () => {
     const content = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-ship', 'SKILL.md'), 'utf-8');
-    // Ship references the review checklist in its pre-landing review step
-    if (content.includes('checklist.md')) {
-      expect(content).toContain('.agents/skills/gstack/review/');
-      expect(content).not.toContain('.agents/skills/gstack-review/checklist');
+    expect(content).toContain('$GSTACK_ROOT/review/checklist.md');
+    expect(content).toContain('$GSTACK_ROOT/review/design-checklist.md');
+    expect(content).toContain('$GSTACK_ROOT/review/greptile-triage.md');
+    expect(content).toContain('$GSTACK_ROOT/review/TODOS-format.md');
+    expect(content).toContain('$GSTACK_SKILLS_ROOT/gstack-document-release/SKILL.md');
+    expect(content).not.toContain('.agents/skills/gstack/review/');
+    expect(content).not.toContain('${HOME}/.agents/skills/gstack/document-release/SKILL.md');
+  });
+
+  test('cross-skill Codex reads use exported gstack-* skill directory names', () => {
+    const paths = [
+      path.join(AGENTS_DIR, 'gstack-autoplan', 'SKILL.md'),
+      path.join(AGENTS_DIR, 'gstack-plan-ceo-review', 'SKILL.md'),
+      path.join(AGENTS_DIR, 'gstack-plan-eng-review', 'SKILL.md'),
+      path.join(AGENTS_DIR, 'gstack-plan-devex-review', 'SKILL.md'),
+    ];
+
+    for (const skillPath of paths) {
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toContain('$GSTACK_SKILLS_ROOT/gstack-office-hours/SKILL.md');
+      expect(content).not.toContain('$GSTACK_SKILLS_ROOT/office-hours/SKILL.md');
     }
   });
 
-  test('greptile-triage sidecar path is correct', () => {
-    const content = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-review', 'SKILL.md'), 'utf-8');
-    if (content.includes('greptile-triage')) {
-      expect(content).toContain('.agents/skills/gstack/review/greptile-triage.md');
-      expect(content).not.toContain('.agents/skills/gstack-review/greptile-triage');
+  test('Codex DX references use the exported gstack-plan-devex-review sidecar path', () => {
+    const paths = [
+      path.join(AGENTS_DIR, 'gstack-devex-review', 'SKILL.md'),
+      path.join(AGENTS_DIR, 'gstack-plan-devex-review', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack-devex-review', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack-plan-devex-review', 'SKILL.md'),
+    ];
+
+    for (const skillPath of paths) {
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toContain('$GSTACK_SKILLS_ROOT/gstack-plan-devex-review/dx-hall-of-fame.md');
+      expect(content).not.toContain('$GSTACK_SKILLS_ROOT/plan-devex-review/dx-hall-of-fame.md');
+    }
+  });
+
+  test('autoplan reads review-plan skills from the shared Codex skill root', () => {
+    const paths = [
+      path.join(AGENTS_DIR, 'gstack-autoplan', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack-autoplan', 'SKILL.md'),
+    ];
+
+    for (const skillPath of paths) {
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toContain('$GSTACK_SKILLS_ROOT/gstack-plan-ceo-review/SKILL.md');
+      expect(content).toContain('$GSTACK_SKILLS_ROOT/gstack-plan-eng-review/SKILL.md');
+      expect(content).toContain('$GSTACK_SKILLS_ROOT/gstack-plan-devex-review/SKILL.md');
+      expect(content).not.toContain('$GSTACK_ROOT/plan-ceo-review/SKILL.md');
+      expect(content).not.toContain('$GSTACK_ROOT/plan-eng-review/SKILL.md');
+      expect(content).not.toContain('$GSTACK_ROOT/plan-devex-review/SKILL.md');
+    }
+  });
+
+  test('Codex autoplan strips CLI and Claude-subagent assumptions', () => {
+    const paths = [
+      path.join(AGENTS_DIR, 'gstack-autoplan', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack-autoplan', 'SKILL.md'),
+    ];
+
+    for (const skillPath of paths) {
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toContain('## Phase 0.5: Codex App Execution Mode');
+      expect(content).toContain('Read AGENTS.md if present, TODOS.md');
+      expect(content).not.toContain('Read CLAUDE.md, TODOS.md');
+      expect(content).not.toContain('codex exec');
+      expect(content).not.toContain('codex review');
+      expect(content).not.toContain('command -v codex');
+      expect(content).not.toContain('codex login');
+      expect(content).not.toContain('Claude subagent');
+      expect(content).not.toContain('CLAUDE SUBAGENT');
+      expect(content).not.toContain('CEO DUAL VOICES');
+      expect(content).not.toContain('ENG DUAL VOICES');
+      expect(content).not.toContain('DX DUAL VOICES');
+      expect(content).not.toContain('~/.claude/skills/gstack/bin/gstack-review-log');
+      expect(content).toContain('$GSTACK_ROOT/bin/gstack-review-log');
+    }
+  });
+
+  test('Codex upgrade handoff reads gstack-upgrade from the shared skill root', () => {
+    const paths = [
+      path.join(AGENTS_DIR, 'gstack', 'SKILL.md'),
+      path.join(AGENTS_DIR, 'gstack-ship', 'SKILL.md'),
+      path.join(AGENTS_DIR, 'gstack-review', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack-ship', 'SKILL.md'),
+      path.join(CODEX_APP_DIR, 'skills', 'gstack-review', 'SKILL.md'),
+    ];
+
+    for (const skillPath of paths) {
+      const content = fs.readFileSync(skillPath, 'utf-8');
+      expect(content).toContain('$GSTACK_SKILLS_ROOT/gstack-upgrade/SKILL.md');
+      expect(content).not.toContain('$GSTACK_ROOT/gstack-upgrade/SKILL.md');
     }
   });
 
   test('all four path rewrite rules produce correct output', () => {
-    // Test each of the 4 path rewrite rules individually
-    const content = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-review', 'SKILL.md'), 'utf-8');
+    const reviewContent = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-review', 'SKILL.md'), 'utf-8');
+    const shipContent = fs.readFileSync(path.join(AGENTS_DIR, 'gstack-ship', 'SKILL.md'), 'utf-8');
 
     // Rule 1: ~/.claude/skills/gstack → $GSTACK_ROOT
-    expect(content).not.toContain('~/.claude/skills/gstack');
-    expect(content).toContain('$GSTACK_ROOT');
+    expect(reviewContent).not.toContain('~/.claude/skills/gstack');
+    expect(reviewContent).toContain('$GSTACK_ROOT');
 
     // Rule 2: .claude/skills/gstack → .agents/skills/gstack
-    expect(content).not.toContain('.claude/skills/gstack');
+    expect(reviewContent).not.toContain('.claude/skills/gstack');
 
-    // Rule 3: .claude/skills/review → .agents/skills/gstack/review
-    expect(content).not.toContain('.claude/skills/review');
+    // Rule 3: .claude/skills/review → $GSTACK_ROOT/review
+    expect(reviewContent).not.toContain('.claude/skills/review');
+    expect(reviewContent).toContain('$GSTACK_ROOT/review/');
 
     // Rule 4: .claude/skills → .agents/skills (catch-all)
-    expect(content).not.toContain('.claude/skills');
+    expect(shipContent).not.toContain('.claude/skills');
+
+    // Rule 5: ${HOME}/.claude/skills/gstack/document-release/SKILL.md → $GSTACK_SKILLS_ROOT/gstack-document-release/SKILL.md
+    expect(shipContent).toContain('$GSTACK_SKILLS_ROOT/gstack-document-release/SKILL.md');
+    expect(shipContent).not.toContain('${HOME}/.claude/skills/gstack/document-release/SKILL.md');
   });
 
   test('path rewrite rules apply to all Codex skills with sidecar references', () => {
@@ -1723,6 +2007,7 @@ describe('Codex generation (--host codex)', () => {
       // No skill should reference Claude paths
       expect(content).not.toContain('~/.claude/skills');
       expect(content).not.toContain('.claude/skills');
+      expect(content).not.toContain('git add .claude/');
       if (content.includes('gstack-config') || content.includes('gstack-update-check') || content.includes('gstack-telemetry-log')) {
         expect(content).toContain('$GSTACK_ROOT');
       }

@@ -18,10 +18,35 @@ import { generateQuestionTuning } from './question-tuning';
 
 function generatePreambleBash(ctx: TemplateContext): string {
   const hostConfig = getHostConfig(ctx.host);
+  const routingDoc = ctx.host === 'codex' ? 'AGENTS.md' : 'CLAUDE.md';
   const runtimeRoot = hostConfig.usesEnvVars
-    ? `_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+    ? ctx.host === 'codex'
+      ? `_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+GSTACK_ROOT="\${GSTACK_ROOT:-}"
+GSTACK_SKILLS_ROOT="\${GSTACK_SKILLS_ROOT:-}"
+if [ -n "$_ROOT" ] && [ -d "$_ROOT/${ctx.paths.localSkillRoot}" ]; then
+  GSTACK_ROOT="$_ROOT/${ctx.paths.localSkillRoot}"
+  GSTACK_SKILLS_ROOT="$_ROOT/.agents/skills"
+fi
+if [ -z "$GSTACK_ROOT" ] || [ -z "$GSTACK_SKILLS_ROOT" ]; then
+  for _GSTACK_PLUGIN_ROOT in "$HOME"/.codex/plugins/cache/*/gstack/* "$HOME"/.codex/plugins/cache/*/gstack; do
+    if [ -d "$_GSTACK_PLUGIN_ROOT/runtime/gstack" ] && [ -d "$_GSTACK_PLUGIN_ROOT/skills" ]; then
+      [ -z "$GSTACK_ROOT" ] && GSTACK_ROOT="$_GSTACK_PLUGIN_ROOT/runtime/gstack"
+      [ -z "$GSTACK_SKILLS_ROOT" ] && GSTACK_SKILLS_ROOT="$_GSTACK_PLUGIN_ROOT/skills"
+      break
+    fi
+  done
+fi
+[ -z "$GSTACK_ROOT" ] && GSTACK_ROOT="$HOME/${hostConfig.globalRoot}"
+[ -z "$GSTACK_SKILLS_ROOT" ] && GSTACK_SKILLS_ROOT="$HOME/.codex/skills"
+GSTACK_BIN="$GSTACK_ROOT/bin"
+GSTACK_BROWSE="$GSTACK_ROOT/browse/dist"
+GSTACK_DESIGN="$GSTACK_ROOT/design/dist"
+`
+      : `_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 GSTACK_ROOT="$HOME/${hostConfig.globalRoot}"
 [ -n "$_ROOT" ] && [ -d "$_ROOT/${ctx.paths.localSkillRoot}" ] && GSTACK_ROOT="$_ROOT/${ctx.paths.localSkillRoot}"
+GSTACK_SKILLS_ROOT="$GSTACK_ROOT"
 GSTACK_BIN="$GSTACK_ROOT/bin"
 GSTACK_BROWSE="$GSTACK_ROOT/browse/dist"
 GSTACK_DESIGN="$GSTACK_ROOT/design/dist"
@@ -94,9 +119,9 @@ else
 fi
 # Session timeline: record skill start (local-only, never sent anywhere)
 ${ctx.paths.binDir}/gstack-timeline-log '{"skill":"${ctx.skillName}","event":"started","branch":"'"$_BRANCH"'","session":"'"$_SESSION_ID"'"}' 2>/dev/null &
-# Check if CLAUDE.md has routing rules
+# Check if ${routingDoc} has routing rules
 _HAS_ROUTING="no"
-if [ -f CLAUDE.md ] && grep -q "## Skill routing" CLAUDE.md 2>/dev/null; then
+if [ -f ${routingDoc} ] && grep -q "## Skill routing" ${routingDoc} 2>/dev/null; then
   _HAS_ROUTING="yes"
 fi
 _ROUTING_DECLINED=$(${ctx.paths.binDir}/gstack-config get routing_declined 2>/dev/null || echo "false")
@@ -239,20 +264,23 @@ This only happens once. If \`PROACTIVE_PROMPTED\` is \`yes\`, skip this entirely
 }
 
 function generateRoutingInjection(ctx: TemplateContext): string {
+  const routingDoc = ctx.host === 'codex' ? 'AGENTS.md' : 'CLAUDE.md';
+  const hostLabel = ctx.host === 'codex' ? 'Codex' : 'Claude';
+
   return `If \`HAS_ROUTING\` is \`no\` AND \`ROUTING_DECLINED\` is \`false\` AND \`PROACTIVE_PROMPTED\` is \`yes\`:
-Check if a CLAUDE.md file exists in the project root. If it does not exist, create it.
+Check if a ${routingDoc} file exists in the project root. If it does not exist, create it.
 
 Use AskUserQuestion:
 
-> gstack works best when your project's CLAUDE.md includes skill routing rules.
-> This tells Claude to use specialized workflows (like /ship, /investigate, /qa)
+> gstack works best when your project's ${routingDoc} includes skill routing rules.
+> This tells ${hostLabel} to use specialized workflows (like /ship, /investigate, /qa)
 > instead of answering directly. It's a one-time addition, about 15 lines.
 
 Options:
-- A) Add routing rules to CLAUDE.md (recommended)
+- A) Add routing rules to ${routingDoc} (recommended)
 - B) No thanks, I'll invoke skills manually
 
-If A: Append this section to the end of CLAUDE.md:
+If A: Append this section to the end of ${routingDoc}:
 
 \`\`\`markdown
 
@@ -277,7 +305,7 @@ Key routing rules:
 - Code quality, health check → invoke health
 \`\`\`
 
-Then commit the change: \`git add CLAUDE.md && git commit -m "chore: add gstack skill routing rules to CLAUDE.md"\`
+Then commit the change: \`git add ${routingDoc} && git commit -m "chore: add gstack skill routing rules to ${routingDoc}"\`
 
 If B: run \`${ctx.paths.binDir}/gstack-config set routing_declined true\`
 Say "No problem. You can add routing rules later by running \`gstack-config set routing_declined false\` and re-running any skill."
@@ -286,13 +314,18 @@ This only happens once per project. If \`HAS_ROUTING\` is \`yes\` or \`ROUTING_D
 }
 
 function generateVendoringDeprecation(ctx: TemplateContext): string {
+  const vendoredRoot = ctx.host === 'codex' ? '.agents/skills/gstack/' : '.claude/skills/gstack/';
+  const vendoredParent = ctx.host === 'codex' ? '.agents/' : '.claude/';
+  const hostDoc = ctx.host === 'codex' ? 'AGENTS.md' : 'CLAUDE.md';
+  const teamSetupRoot = ctx.host === 'codex' ? '~/.codex/skills/gstack' : '~/.claude/skills/gstack';
+
   return `If \`VENDORED_GSTACK\` is \`yes\`: This project has a vendored copy of gstack at
-\`.claude/skills/gstack/\`. Vendoring is deprecated. We will not keep vendored copies
+\`${vendoredRoot}\`. Vendoring is deprecated. We will not keep vendored copies
 up to date, so this project's gstack will fall behind.
 
 Use AskUserQuestion (one-time per project, check for \`~/.gstack/.vendoring-warned-$SLUG\` marker):
 
-> This project has gstack vendored in \`.claude/skills/gstack/\`. Vendoring is deprecated.
+> This project has gstack vendored in \`${vendoredRoot}\`. Vendoring is deprecated.
 > We won't keep this copy up to date, so you'll fall behind on new features and fixes.
 >
 > Want to migrate to team mode? It takes about 30 seconds.
@@ -302,11 +335,11 @@ Options:
 - B) No, I'll handle it myself
 
 If A:
-1. Run \`git rm -r .claude/skills/gstack/\`
-2. Run \`echo '.claude/skills/gstack/' >> .gitignore\`
+1. Run \`git rm -r ${vendoredRoot}\`
+2. Run \`echo '${vendoredRoot}' >> .gitignore\`
 3. Run \`${ctx.paths.binDir}/gstack-team-init required\` (or \`optional\`)
-4. Run \`git add .claude/ .gitignore CLAUDE.md && git commit -m "chore: migrate gstack from vendored to team mode"\`
-5. Tell the user: "Done. Each developer now runs: \`cd ~/.claude/skills/gstack && ./setup --team\`"
+4. Run \`git add ${vendoredParent} .gitignore ${hostDoc} && git commit -m "chore: migrate gstack from vendored to team mode"\`
+5. Tell the user: "Done. Each developer now runs: \`cd ${teamSetupRoot} && ./setup --team\`"
 
 If B: say "OK, you're on your own to keep the vendored copy up to date."
 
@@ -536,7 +569,7 @@ This does NOT apply to routine coding, small features, or obvious changes.`;
 function generateSearchBeforeBuildingSection(ctx: TemplateContext): string {
   return `## Search Before Building
 
-Before building anything unfamiliar, **search first.** See \`${ctx.paths.skillRoot}/ETHOS.md\`.
+Before building anything unfamiliar, **search first.** See \`${ctx.paths.runtimeRoot}/ETHOS.md\`.
 - **Layer 1** (tried and true) — don't reinvent. **Layer 2** (new and popular) — scrutinize. **Layer 3** (first principles) — prize above all.
 
 **Eureka:** When first-principles reasoning contradicts conventional wisdom, name it and log:

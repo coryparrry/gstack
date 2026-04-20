@@ -7,13 +7,23 @@ if test -x "$DIR/find-browse"; then
 fi
 # Fallback: basic discovery with priority chain
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+BIN_NAME="browse"
+case "$(uname -s 2>/dev/null)" in
+  MINGW*|MSYS*|CYGWIN*) BIN_NAME="browse.exe" ;;
+esac
 for MARKER in .codex .agents .claude; do
-  if [ -n "$ROOT" ] && test -x "$ROOT/$MARKER/skills/gstack/browse/dist/browse"; then
-    echo "$ROOT/$MARKER/skills/gstack/browse/dist/browse"
+  if [ -n "$ROOT" ] && test -x "$ROOT/$MARKER/skills/gstack/browse/dist/$BIN_NAME"; then
+    echo "$ROOT/$MARKER/skills/gstack/browse/dist/$BIN_NAME"
     exit 0
   fi
-  if test -x "$HOME/$MARKER/skills/gstack/browse/dist/browse"; then
-    echo "$HOME/$MARKER/skills/gstack/browse/dist/browse"
+  if test -x "$HOME/$MARKER/skills/gstack/browse/dist/$BIN_NAME"; then
+    echo "$HOME/$MARKER/skills/gstack/browse/dist/$BIN_NAME"
+    exit 0
+  fi
+done
+for PLUGIN_ROOT in "$HOME"/.codex/plugins/cache/*/gstack "$HOME"/.codex/plugins/cache/*/gstack/*; do
+  if test -x "$PLUGIN_ROOT/runtime/gstack/browse/dist/$BIN_NAME"; then
+    echo "$PLUGIN_ROOT/runtime/gstack/browse/dist/$BIN_NAME"
     exit 0
   fi
 done

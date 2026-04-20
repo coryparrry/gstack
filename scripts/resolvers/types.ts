@@ -9,6 +9,7 @@ export type Host = (typeof ALL_HOST_CONFIGS)[number]['name'];
 
 export interface HostPaths {
   skillRoot: string;
+  runtimeRoot: string;
   localSkillRoot: string;
   binDir: string;
   browseDir: string;
@@ -24,8 +25,11 @@ function buildHostPaths(): Record<string, HostPaths> {
   const paths: Record<string, HostPaths> = {};
   for (const config of ALL_HOST_CONFIGS) {
     if (config.usesEnvVars) {
+      const runtimeRoot = '$GSTACK_ROOT';
+      const skillRoot = config.name === 'codex' ? '$GSTACK_SKILLS_ROOT' : runtimeRoot;
       paths[config.name] = {
-        skillRoot: '$GSTACK_ROOT',
+        skillRoot,
+        runtimeRoot,
         localSkillRoot: config.localSkillRoot,
         binDir: '$GSTACK_BIN',
         browseDir: '$GSTACK_BROWSE',
@@ -35,6 +39,7 @@ function buildHostPaths(): Record<string, HostPaths> {
       const root = `~/${config.globalRoot}`;
       paths[config.name] = {
         skillRoot: root,
+        runtimeRoot: root,
         localSkillRoot: config.localSkillRoot,
         binDir: `${root}/bin`,
         browseDir: `${root}/browse/dist`,

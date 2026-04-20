@@ -11,7 +11,6 @@ description: |
   for each design type. Use when: "finalize this design", "turn this into HTML",
   "build me a page", "implement this design", or after any planning skill.
   Proactively suggest when user has approved a design or has a plan ready. (gstack)
-  Voice triggers (speech-to-text aliases): "build the design", "code the mockup", "make it real".
 triggers:
   - build the design
   - code the mockup
@@ -862,7 +861,7 @@ else a few taps away with an obvious path to get there.
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 B=""
 [ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/gstack/browse/dist/browse" ] && B="$_ROOT/.claude/skills/gstack/browse/dist/browse"
-[ -z "$B" ] && B="$HOME/.claude/skills/gstack/browse/dist/browse"
+[ -z "$B" ] && B="~/.claude/skills/gstack/browse/dist/browse"
 if [ -x "$B" ]; then
   echo "READY: $B"
 else

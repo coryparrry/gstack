@@ -8,7 +8,6 @@ description: |
   fixes anything. Use when asked to "just report bugs", "qa report only", or
   "test but don't fix". For the full test-fix-verify loop, use /qa instead.
   Proactively suggest when the user wants a bug report without any code changes. (gstack)
-  Voice triggers (speech-to-text aliases): "bug report", "just check for bugs".
 allowed-tools:
   - Bash
   - Read
@@ -759,7 +758,7 @@ You are a QA engineer. Test web applications like a real user — click everythi
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 B=""
 [ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/gstack/browse/dist/browse" ] && B="$_ROOT/.claude/skills/gstack/browse/dist/browse"
-[ -z "$B" ] && B="$HOME/.claude/skills/gstack/browse/dist/browse"
+[ -z "$B" ] && B="~/.claude/skills/gstack/browse/dist/browse"
 if [ -x "$B" ]; then
   echo "READY: $B"
 else

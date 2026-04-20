@@ -7,7 +7,6 @@ description: |
   The sidebar shows a live activity feed and chat. Anti-bot stealth built in.
   Use when asked to "open gstack browser", "launch browser", "connect chrome",
   "open chrome", "real browser", "launch chrome", "side panel", or "control my browser".
-  Voice triggers (speech-to-text aliases): "show me the browser".
 triggers:
   - open gstack browser
   - launch chromium
@@ -742,7 +741,7 @@ anti-bot stealth, and custom branding. You see every action in real time.
 _ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 B=""
 [ -n "$_ROOT" ] && [ -x "$_ROOT/.claude/skills/gstack/browse/dist/browse" ] && B="$_ROOT/.claude/skills/gstack/browse/dist/browse"
-[ -z "$B" ] && B="$HOME/.claude/skills/gstack/browse/dist/browse"
+[ -z "$B" ] && B="~/.claude/skills/gstack/browse/dist/browse"
 if [ -x "$B" ]; then
   echo "READY: $B"
 else

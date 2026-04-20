@@ -47,3 +47,40 @@ bun run skill:check      # health dashboard for all skills
 - Run `bun run gen:skill-docs --host codex` to regenerate Codex-specific output.
 - The browse binary provides headless browser access. Use `$B <command>` in skills.
 - Safety skills (careful, freeze, guard) use inline advisory prose — always confirm before destructive operations.
+
+## Codex Port Workstream
+
+- This repo is being used to port gstack so it works in the Codex app with the same user-facing functionality as the CLI version.
+- Project definition: preserve gstack's full user-facing behavior and cross-skill workflow exactly as experienced by the end user, while adapting only the underlying backend, tooling, and host integration needed to make it work reliably in the Codex app.
+- Preserve behavior and cross-skill workflows. Change backend/tooling integration only when needed for Codex app compatibility.
+- The target is the Codex app, not the standalone Codex CLI. Do not let CLI-oriented validation, harness work, or convenience tooling become the plan or the product.
+- Use Codex CLI paths only when they directly validate or unblock Codex app behavior, packaging, discovery, install, or runtime compatibility. Treat the CLI as a narrow support tool, not the delivery surface.
+- If a task starts drifting into generic Codex CLI infrastructure, stop and re-anchor on the Codex app/plugin artifact, host integration, and end-user workflow parity.
+- Prefer work that moves the actual Codex app/plugin deliverable forward: artifact shape, app discovery/install contract, runtime asset exposure, routing, browser integration, and learnings/memory parity as experienced in the app.
+- Do not expand generic E2E/test harness scope unless it is required to prove Codex app compatibility for a specific blocked surface.
+- Be conscious of context-window usage. When reading long documents, large generated skills, or doing review-heavy analysis across many files, prefer subagents so the main thread stays compact.
+
+## Subagent Use
+
+For non-trivial engineering work, use the available `$agent-team-orchestrator` skill to decide when and how to delegate.
+
+Apply these rules:
+- Keep the main agent on the critical path. The main agent owns user communication, synthesis, final decisions, and any immediate blocking step.
+- Use subagents for bounded sidecar tasks only when delegation improves parallelism, context isolation, or independent verification.
+- Always spawn subagents with `model: "gpt-5.4-mini"`.
+- Do not fork or pass the full thread by default.
+- Prefer `fork_context: false` and pass only the minimum context needed: a short task summary plus the exact files, diffs, paths, symbols, commands, or artifacts required for the task.
+- Use full-thread context only when a shorter context would materially risk correctness.
+- Keep subagents read-only unless edits are specifically needed.
+- Do not delegate work that is too ambiguous, too broad, or too context-heavy for `gpt-5.4-mini`; keep that work on the main agent.
+- Prefer several small, well-scoped subagents over one vague general-purpose subagent.
+- Do not delegate trivial single-file work or urgent blocking work that the main agent can complete faster directly.
+
+Use these roles:
+- `Explore scout`: read-only repo digging, dependency tracing, and source-of-truth discovery.
+- `Planner`: decomposition only.
+- `Reviewer`: correctness, architecture drift, security smell, duplicated-logic drift, and missing-test review.
+- `Validator`: focused lint, typecheck, test, build, repro, or browser verification.
+- `Handoff summariser`: compress subagent outputs into a compact parent-ready handoff.
+
+Subagent prompts should be short, explicit, and bounded. Each subagent task should specify scope, allowed actions, deliverable, and stop condition.

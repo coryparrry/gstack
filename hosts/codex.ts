@@ -2,7 +2,7 @@ import type { HostConfig } from '../scripts/host-config';
 
 const codex: HostConfig = {
   name: 'codex',
-  displayName: 'OpenAI Codex CLI',
+  displayName: 'OpenAI Codex App',
   cliCommand: 'codex',
   cliAliases: ['agents'],
 
@@ -24,10 +24,22 @@ const codex: HostConfig = {
     skipSkills: ['codex'],  // Codex skill is a Claude wrapper around codex exec
   },
 
+  appExport: {
+    root: '.codex-app',
+    skillRoot: 'skills',
+    runtimeRoot: 'runtime/gstack',
+    manifestFile: 'manifest.json',
+  },
+
   pathRewrites: [
+    { from: '${HOME}/.claude/skills/gstack/document-release/SKILL.md', to: '$GSTACK_SKILLS_ROOT/gstack-document-release/SKILL.md' },
+    { from: '~/.claude/skills/gstack/plan-ceo-review/SKILL.md', to: '$GSTACK_SKILLS_ROOT/gstack-plan-ceo-review/SKILL.md' },
+    { from: '~/.claude/skills/gstack/plan-design-review/SKILL.md', to: '$GSTACK_SKILLS_ROOT/gstack-plan-design-review/SKILL.md' },
+    { from: '~/.claude/skills/gstack/plan-eng-review/SKILL.md', to: '$GSTACK_SKILLS_ROOT/gstack-plan-eng-review/SKILL.md' },
+    { from: '~/.claude/skills/gstack/plan-devex-review/SKILL.md', to: '$GSTACK_SKILLS_ROOT/gstack-plan-devex-review/SKILL.md' },
     { from: '~/.claude/skills/gstack', to: '$GSTACK_ROOT' },
+    { from: '.claude/skills/review', to: '$GSTACK_ROOT/review' },
     { from: '.claude/skills/gstack', to: '.agents/skills/gstack' },
-    { from: '.claude/skills/review', to: '.agents/skills/gstack/review' },
     { from: '.claude/skills', to: '.agents/skills' },
   ],
 
@@ -44,7 +56,7 @@ const codex: HostConfig = {
   runtimeRoot: {
     globalSymlinks: ['bin', 'browse/dist', 'browse/bin', 'gstack-upgrade', 'ETHOS.md'],
     globalFiles: {
-      'review': ['checklist.md', 'TODOS-format.md'],
+      'review': ['checklist.md', 'design-checklist.md', 'greptile-triage.md', 'TODOS-format.md'],
     },
   },
   sidecar: {

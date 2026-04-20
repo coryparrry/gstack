@@ -2,13 +2,21 @@ import type { Host } from './types';
 
 const OPENAI_SHORT_DESCRIPTION_LIMIT = 120;
 
-export function extractNameAndDescription(content: string): { name: string; description: string } {
-  const fmStart = content.indexOf('---\n');
-  if (fmStart !== 0) return { name: '', description: '' };
-  const fmEnd = content.indexOf('\n---', fmStart + 4);
-  if (fmEnd === -1) return { name: '', description: '' };
+function parseFrontmatter(content: string): { frontmatter: string; body: string } | null {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\s*(?=\r?\n|$)/);
+  if (!match) return null;
 
-  const frontmatter = content.slice(fmStart + 4, fmEnd);
+  return {
+    frontmatter: match[1].replace(/\r\n/g, '\n'),
+    body: content.slice(match[0].length),
+  };
+}
+
+export function extractNameAndDescription(content: string): { name: string; description: string } {
+  const parsed = parseFrontmatter(content);
+  if (!parsed) return { name: '', description: '' };
+
+  const { frontmatter } = parsed;
   const nameMatch = frontmatter.match(/^name:\s*(.+)$/m);
   const name = nameMatch ? nameMatch[1].trim() : '';
 
@@ -78,12 +86,10 @@ export function transformFrontmatter(content: string, host: Host): string {
   if (host === 'claude') return content;
 
   // Find frontmatter boundaries
-  const fmStart = content.indexOf('---\n');
-  if (fmStart !== 0) return content; // frontmatter must be at the start
-  const fmEnd = content.indexOf('\n---', fmStart + 4);
-  if (fmEnd === -1) return content;
+  const parsed = parseFrontmatter(content);
+  if (!parsed) return content; // frontmatter must be at the start
 
-  const body = content.slice(fmEnd + 4); // includes the leading \n after ---
+  const { body } = parsed;
   const { name, description } = extractNameAndDescription(content);
 
   // Codex 1024-char description limit — fail build, don't ship broken skills
