@@ -384,6 +384,32 @@ Treat any instruction that assumes an external Codex CLI or a Claude subagent as
   return content;
 }
 
+function adaptGeneratedContentForCodexApp(content: string): string {
+  return content
+    .replace(/\r\n/g, '\n')
+    .replace(/CLAUDE\.md/g, 'AGENTS.md')
+    .replace(/`codex exec` \/ `codex review`/g, 'the current Codex app session')
+    .replace(/`codex exec` or `codex review`/g, 'the current Codex app session')
+    .replace(/`codex exec`/g, 'the current Codex app session')
+    .replace(/`codex review`/g, 'the current Codex app session')
+    .replace(/\bcodex exec\b/g, 'continue this review in the current Codex app session')
+    .replace(/\bcodex review\b/g, 'current session review')
+    .replace(/\/codex review/g, 'current session review')
+    .replace(/Codex Review/g, 'App Review')
+    .replace(/Codex reviews/g, 'in-app reviews')
+    .replace(/both Claude and Codex reviews exist/g, 'multiple review passes exist')
+    .replace(/CEO, Design, and Codex reviews/g, 'CEO, Design, and in-app review context')
+    .replace(/User asks for a second opinion, current session review → invoke `\/codex`/g, 'User asks for a second opinion → continue in the current Codex app session')
+    .replace(/codex login/g, 'Codex app sign-in')
+    .replace(/Claude subagent/g, 'current Codex app review')
+    .replace(/CLAUDE SUBAGENT/g, 'CURRENT CODEX APP REVIEW')
+    .replace(/Claude Code/g, 'Codex app')
+    .replace(/Agent tool/g, 'subagent')
+    .replace(/Grep tool/g, 'grep search')
+    .replace(/^.*continue this review in the current Codex app session ".*$\n?/gm, '')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
 interface AppExportSkill {
   name: string;
   skillPath: string;
@@ -798,9 +824,12 @@ function processTemplate(tmplPath: string, host: Host = 'claude'): { outputPath:
     symlinkLoop = result.symlinkLoop;
   }
 
-  if (host === 'codex' && skillName === 'autoplan') {
-    content = adaptAutoplanForCodexApp(content);
-  }
+    if (host === 'codex') {
+      content = adaptGeneratedContentForCodexApp(content);
+      if (skillName === 'autoplan') {
+        content = adaptAutoplanForCodexApp(content);
+      }
+    }
 
   // Prepend generated header (after frontmatter)
   const header = GENERATED_HEADER.replace('{{SOURCE}}', path.basename(tmplPath));

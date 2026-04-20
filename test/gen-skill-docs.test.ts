@@ -171,6 +171,37 @@ describe('gen-skill-docs', () => {
     expect(violations).toEqual([]);
   });
 
+  test('generated Codex skills strip stale Claude and Codex CLI drift', () => {
+    const agentsDir = path.join(ROOT, '.agents', 'skills');
+    if (!fs.existsSync(agentsDir)) return;
+
+    const blockedPatterns = [
+      'CLAUDE.md',
+      'codex exec',
+      'codex review',
+      'Claude subagent',
+      'Claude Code',
+      'Agent tool',
+      'Grep tool',
+      'Codex Review',
+    ];
+
+    const hits: string[] = [];
+    for (const entry of fs.readdirSync(agentsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const skillMd = path.join(agentsDir, entry.name, 'SKILL.md');
+      if (!fs.existsSync(skillMd)) continue;
+      const content = fs.readFileSync(skillMd, 'utf-8');
+      for (const pattern of blockedPatterns) {
+        if (content.includes(pattern)) {
+          hits.push(`${entry.name}: ${pattern}`);
+        }
+      }
+    }
+
+    expect(hits).toEqual([]);
+  });
+
   test('package.json version matches VERSION file', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf-8'));
     const version = fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf-8').trim();

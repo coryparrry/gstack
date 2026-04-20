@@ -23,6 +23,10 @@ function ensureExists(targetPath: string, label: string): void {
   }
 }
 
+function newestMtimeMs(paths: string[]): number {
+  return Math.max(...paths.filter(fs.existsSync).map(filePath => fs.statSync(filePath).mtimeMs), 0);
+}
+
 function filesMatch(source: string, destination: string): boolean {
   if (!fs.existsSync(destination)) return false;
   const sourceStat = fs.statSync(source);
@@ -63,7 +67,19 @@ function ensureCodexRuntimeBuilt(): void {
   const browseDist = path.join(ROOT, 'browse', 'dist');
   const serverNodePath = path.join(browseDist, 'server-node.mjs');
   const bunPolyfillPath = path.join(browseDist, 'bun-polyfill.cjs');
-  if (fs.existsSync(browseDist) && fs.existsSync(serverNodePath) && fs.existsSync(bunPolyfillPath)) return;
+  const browseBinaryPath = path.join(browseDist, process.platform === 'win32' ? 'browse.exe' : 'browse');
+  const findBrowseBinaryPath = path.join(browseDist, process.platform === 'win32' ? 'find-browse.exe' : 'find-browse');
+  const sourceInputs = [
+    path.join(ROOT, 'browse', 'src', 'cli.ts'),
+    path.join(ROOT, 'browse', 'src', 'find-browse.ts'),
+    path.join(ROOT, 'browse', 'src', 'server.ts'),
+    path.join(ROOT, 'browse', 'src', 'bun-polyfill.cjs'),
+  ];
+  const buildOutputs = [browseBinaryPath, findBrowseBinaryPath, serverNodePath, bunPolyfillPath];
+  const outputsReady = buildOutputs.every(fs.existsSync);
+  const sourcesMtime = newestMtimeMs(sourceInputs);
+  const outputsMtime = newestMtimeMs(buildOutputs);
+  if (outputsReady && outputsMtime >= sourcesMtime) return;
 
   console.log('BUILDING: browse/dist');
   fs.mkdirSync(browseDist, { recursive: true });

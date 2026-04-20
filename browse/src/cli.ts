@@ -22,7 +22,7 @@ export function resolveServerScript(
   env: Record<string, string | undefined> = process.env,
   metaDir: string = import.meta.dir,
   execPath: string = process.execPath
-): string {
+): string | null {
   if (env.BROWSE_SERVER_SCRIPT) {
     return env.BROWSE_SERVER_SCRIPT;
   }
@@ -45,9 +45,7 @@ export function resolveServerScript(
     }
   }
 
-  throw new Error(
-    'Cannot find server.ts. Set BROWSE_SERVER_SCRIPT env or run from the browse source tree.'
-  );
+  return null;
 }
 
 const SERVER_SCRIPT = resolveServerScript();
@@ -231,6 +229,11 @@ async function startServer(extraEnv?: Record<string, string>): Promise<ServerSta
       `${extraEnvStr})}).unref()`;
     Bun.spawnSync(['node', '-e', launcherCode], { stdio: ['ignore', 'ignore', 'ignore'] });
   } else {
+    if (!SERVER_SCRIPT) {
+      throw new Error(
+        'Cannot find server.ts. Set BROWSE_SERVER_SCRIPT env or run from the browse source tree.'
+      );
+    }
     // macOS/Linux: Bun.spawn + unref works correctly
     proc = Bun.spawn(['bun', 'run', SERVER_SCRIPT], {
       stdio: ['ignore', 'pipe', 'pipe'],
