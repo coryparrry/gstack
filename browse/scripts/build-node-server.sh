@@ -68,12 +68,12 @@ perl -pi -e 's|import { Database } from "bun:sqlite";|const Database = null; // 
 # Step 3: Create the final file with polyfill header injected after the first line
 {
   head -1 "$DIST_DIR/server-node.mjs"
-  echo '// â”€â”€ Windows Node.js compatibility (auto-generated) â”€â”€'
+  echo '// -- Windows Node.js compatibility (auto-generated) --'
   echo 'import { fileURLToPath as _ftp } from "node:url";'
   echo 'import { dirname as _dn } from "node:path";'
   echo 'const __browseNodeSrcDir = _dn(_dn(_ftp(import.meta.url))) + "/src";'
   echo '{ const _r = createRequire(import.meta.url); _r("./bun-polyfill.cjs"); }'
-  echo '// â”€â”€ end compatibility â”€â”€'
+  echo '// -- end compatibility --'
   tail -n +2 "$DIST_DIR/server-node.mjs"
 } > "$DIST_DIR/server-node.tmp.mjs"
 

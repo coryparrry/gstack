@@ -53,12 +53,15 @@ describe('codex plugin export', () => {
       expect(pluginManifest.interface.category).toBe('Coding');
 
       const marketplace = JSON.parse(fs.readFileSync(exportPaths.marketplacePath, 'utf-8'));
+      const expectedMarketplacePath = path
+        .relative(path.dirname(exportPaths.marketplacePath), exportPaths.pluginRoot)
+        .replace(/\\/g, '/');
       expect(marketplace.plugins).toHaveLength(1);
       expect(marketplace.plugins[0]).toEqual({
         name: 'gstack',
         source: {
           source: 'local',
-          path: './plugins/gstack',
+          path: expectedMarketplacePath.startsWith('.') ? expectedMarketplacePath : `./${expectedMarketplacePath}`,
         },
         policy: {
           installation: 'INSTALLED_BY_DEFAULT',
@@ -85,5 +88,34 @@ describe('codex plugin export', () => {
     expect(rootSkill).toContain('$_GSTACK_PLUGIN_ROOT/skills');
     expect(rootSkill).toContain('$GSTACK_SKILLS_ROOT/[skill-name]/SKILL.md');
     expect(rootSkill).toContain('$GSTACK_SKILLS_ROOT/gstack-upgrade/SKILL.md');
+  });
+
+  test('export-codex-plugin derives marketplace path from configurable plugin root', () => {
+    const exportPaths = makeTempPluginExportRoot();
+    const customPluginRoot = path.join(path.dirname(exportPaths.marketplacePath), 'custom', 'gstack-plugin');
+
+    try {
+      const result = Bun.spawnSync(['bun', 'run', 'scripts/export-codex-plugin.ts'], {
+        cwd: ROOT,
+        stdout: 'pipe',
+        stderr: 'pipe',
+        env: {
+          ...process.env,
+          GSTACK_CODEX_PLUGIN_ROOT: customPluginRoot,
+          GSTACK_CODEX_MARKETPLACE_PATH: exportPaths.marketplacePath,
+        },
+      });
+
+      if (result.exitCode !== 0) {
+        throw new Error(
+          `export-codex-plugin failed with exit code ${result.exitCode}\nstdout:\n${result.stdout.toString()}\nstderr:\n${result.stderr.toString()}`,
+        );
+      }
+
+      const marketplace = JSON.parse(fs.readFileSync(exportPaths.marketplacePath, 'utf-8'));
+      expect(marketplace.plugins[0].source.path).toBe('./custom/gstack-plugin');
+    } finally {
+      exportPaths.cleanup();
+    }
   });
 });

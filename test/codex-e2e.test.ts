@@ -268,7 +268,8 @@ describeCodex('Codex E2E', () => {
       }
 
       if (result.exitCode === -1) {
-        recordCodexE2E('codex-routing-ideation', result, true);
+        recordCodexE2E('codex-routing-ideation', result, hasExpectedBehavior);
+        expect(hasExpectedBehavior).toBe(true);
         return;
       }
 
@@ -315,7 +316,8 @@ describeCodex('Codex E2E', () => {
       }
 
       if (result.exitCode === -1) {
-        recordCodexE2E('codex-routing-plan-eng', result, true);
+        recordCodexE2E('codex-routing-plan-eng', result, hasExpectedBehavior);
+        expect(hasExpectedBehavior).toBe(true);
         return;
       }
 

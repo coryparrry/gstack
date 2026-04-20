@@ -60,6 +60,10 @@ const marketplacePath = path.resolve(
       path.join(ROOT, '.agents', 'plugins', 'marketplace.json')
   ),
 );
+const marketplacePluginPath = (() => {
+  const relative = path.relative(path.dirname(marketplacePath), pluginRoot).replace(/\\/g, '/');
+  return relative.startsWith('.') ? relative : `./${relative}`;
+})();
 
 function ensureExists(targetPath: string, label: string): void {
   if (!fs.existsSync(targetPath)) {
@@ -185,7 +189,7 @@ const marketplace = {
       name: 'gstack',
       source: {
         source: 'local',
-        path: './plugins/gstack',
+        path: marketplacePluginPath,
       },
       policy: {
         installation: 'INSTALLED_BY_DEFAULT',

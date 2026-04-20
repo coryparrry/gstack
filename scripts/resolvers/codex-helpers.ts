@@ -3,7 +3,7 @@ import type { Host } from './types';
 const OPENAI_SHORT_DESCRIPTION_LIMIT = 120;
 
 function parseFrontmatter(content: string): { frontmatter: string; body: string } | null {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\s*(?=\r?\n|$)/);
   if (!match) return null;
 
   return {
