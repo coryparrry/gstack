@@ -35,3 +35,4 @@ supabase/.temp/
 # Throughput analysis — local-only, regenerate via scripts/garry-output-comparison.ts
 docs/throughput-*.json
 docs/designs/CODEX_PORT_HANDOFF_2026-04-18.md
+docs/designs/CODEX_PLUGIN_FULL_SKILL_VERIFICATION_PLAN_2026-04-20.md
