@@ -119,7 +119,7 @@ function ensureCodexRuntimeBuilt(): void {
   ].join('\n');
   serverBundle =
     firstNewline === -1
-      ? `${serverBundle}\n${header}\n`
+      ? `${header}\n${serverBundle}`
       : `${serverBundle.slice(0, firstNewline + 1)}${header}\n${serverBundle.slice(firstNewline + 1)}`;
   fs.writeFileSync(serverNodePath, serverBundle);
 
